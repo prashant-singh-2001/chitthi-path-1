@@ -27,3 +27,24 @@ minio:
   access-key: chitthi
   secret-key: chitthi123
   bucket: chitthi-documents
+
+sarvam:
+  base-url: https://api.sarvam.ai
+  api-subscription-key: ${SARVAM_API_KEY:changeme}
+  rate-limits:
+    vision-requests-per-minute: 10
+  pipeline:
+    ocr-max-pages-per-chunk: 10
+    translate-max-chars-per-request: 2000
+    tts-max-chars-per-request: 2500
+    concurrency: 5
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics
+
+logging:
+  pattern:
+    console: "%d{ISO8601} [%thread] %-5level %logger{36} - %msg%n"
