@@ -44,11 +44,18 @@ section for the full page state machine.
 
 ## Status
 
-Day 1–2 skeleton complete: project scaffold, Docker Compose infra, Flyway
-schema for the core pipeline tables, and a `SarvamClient` with a WireMock
-contract test pinning the Digitise job contract. Pipeline workers
-(upload, OCR batching, translate/TTS, SSE progress) land in later days
-per the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan).
+- **Day 1–2:** project scaffold, Docker Compose infra, Flyway schema for
+  the core pipeline tables, and a `SarvamClient` with a WireMock
+  contract test pinning the Digitise job contract.
+- **Day 3–4 (partial):** `POST /api/documents` and `GET
+  /api/documents/{id}` — upload validation, PDF-to-page-image splitting
+  (PDFBox), and MinIO-backed storage. A 12-page PDF upload produces 12
+  ordered `Page` rows and 12 stored images. OCR batching, the RabbitMQ
+  queue, the OCR worker and the status poller are not wired up yet —
+  pages currently stay `PENDING` after upload.
+
+See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
+for what's next.
 
 ## Prerequisites
 
