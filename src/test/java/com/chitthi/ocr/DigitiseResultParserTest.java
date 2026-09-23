@@ -19,7 +19,7 @@ class DigitiseResultParserTest {
 
     private final OcrProperties ocrProperties = new OcrProperties(
             new OcrProperties.Worker(true, 2, 4),
-            new OcrProperties.Poller(true, Duration.ofSeconds(1), 20, Duration.ofSeconds(30)),
+            new OcrProperties.Poller(true, Duration.ofSeconds(1), 20),
             new OcrProperties.Poll(Duration.ofSeconds(5), 1.5, Duration.ofSeconds(60), 0.2, 30),
             new OcrProperties.Dispatch(Duration.ofSeconds(60), 3),
             33_554_432L,

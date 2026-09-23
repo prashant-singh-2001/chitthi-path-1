@@ -29,7 +29,7 @@ class OcrPayloadPackagerTest {
     private final ObjectStorageService storageService = mock(ObjectStorageService.class);
     private final OcrProperties properties = new OcrProperties(
             new OcrProperties.Worker(true, 2, 4),
-            new OcrProperties.Poller(true, java.time.Duration.ofSeconds(1), 20, java.time.Duration.ofSeconds(30)),
+            new OcrProperties.Poller(true, java.time.Duration.ofSeconds(1), 20),
             new OcrProperties.Poll(java.time.Duration.ofSeconds(5), 1.5, java.time.Duration.ofSeconds(60), 0.2, 30),
             new OcrProperties.Dispatch(java.time.Duration.ofSeconds(60), 3),
             33_554_432L,

@@ -55,7 +55,6 @@ chitthi:
       enabled: true
       sweep-interval: 1s
       claim-batch-size: 20
-      claim-lease: 30s
     poll:
       # Sarvam's status endpoint is async; 5s matches the requirements doc's
       # stated starting interval. Capped growth with jitter keeps multiple

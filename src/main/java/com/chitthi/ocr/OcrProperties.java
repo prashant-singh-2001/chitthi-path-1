@@ -32,7 +32,7 @@ public record OcrProperties(
     public record Worker(boolean enabled, int concurrency, int maxConcurrency) {
     }
 
-    public record Poller(boolean enabled, Duration sweepInterval, int claimBatchSize, Duration claimLease) {
+    public record Poller(boolean enabled, Duration sweepInterval, int claimBatchSize) {
     }
 
     /** The backoff curve {@code OcrPollSchedule} implements: initialDelay * multiplier^(n-1), capped at maxDelay. */
