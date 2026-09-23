@@ -175,6 +175,16 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- Smoke tests make real, paid calls against the Sarvam
+                         API and must never run in mvn verify or CI. Run them
+                         deliberately with -Dgroups=smoke. -->
+                    <excludedGroups>smoke</excludedGroups>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>

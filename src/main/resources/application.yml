@@ -2,6 +2,13 @@ spring:
   application:
     name: chitthi
 
+  servlet:
+    multipart:
+      # FR1's 20 MB-per-file limit is unreachable against Boot's 1 MB/10 MB
+      # defaults; max-request-size covers a 30-image batch upload.
+      max-file-size: 20MB
+      max-request-size: 64MB
+
   datasource:
     url: jdbc:postgresql://localhost:55432/chitthi
     username: chitthi
@@ -21,12 +28,57 @@ spring:
     port: 5672
     username: chitthi
     password: chitthi
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2s
+          multiplier: 2
+          max-interval: 10s
 
 minio:
   endpoint: http://localhost:9000
   access-key: chitthi
   secret-key: chitthi123
   bucket: chitthi-documents
+
+chitthi:
+  ocr:
+    worker:
+      enabled: true
+      # Two consumers at prefetch 1: fairness across batches matters more
+      # than throughput, since a submit is a slow, expensive paid call.
+      concurrency: 2
+      max-concurrency: 4
+    poller:
+      enabled: true
+      # Plain milliseconds, not "1s": @Scheduled's fixedDelayString only
+      # accepts a bare long or an ISO-8601 duration, not the shorthand
+      # @ConfigurationProperties binding elsewhere in this file understands.
+      sweep-interval-ms: 1000
+      claim-batch-size: 20
+    poll:
+      # Sarvam's status endpoint is async; 5s matches the requirements doc's
+      # stated starting interval. Capped growth with jitter keeps multiple
+      # batches from a multi-chunk document polling in lockstep forever.
+      initial-delay: 5s
+      multiplier: 1.5
+      max-delay: 60s
+      jitter-ratio: 0.2
+      max-attempts: 30
+    dispatch:
+      # How long a freshly created batch waits before the poller's
+      # redispatch sweep assumes its after-commit publish never happened.
+      lease: 60s
+      max-submit-attempts: 3
+    max-payload-bytes: 33554432
+    result:
+      max-unzipped-bytes: 33554432
+      # The Digitise output's per-page text field name isn't pinned by the
+      # docs (see PageTextExtractor). Adding a name here needs no code
+      # change - see SarvamDigitiseSmokeTest for how to find the real one.
+      text-fields: [markdown, md, text, content, page_content, extracted_text, output]
 
 sarvam:
   base-url: https://api.sarvam.ai

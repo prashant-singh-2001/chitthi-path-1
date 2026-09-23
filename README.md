@@ -47,12 +47,25 @@ section for the full page state machine.
 - **Day 1–2:** project scaffold, Docker Compose infra, Flyway schema for
   the core pipeline tables, and a `SarvamClient` with a WireMock
   contract test pinning the Digitise job contract.
-- **Day 3–4 (partial):** `POST /api/documents` and `GET
-  /api/documents/{id}` — upload validation, PDF-to-page-image splitting
-  (PDFBox), and MinIO-backed storage. A 12-page PDF upload produces 12
-  ordered `Page` rows and 12 stored images. OCR batching, the RabbitMQ
-  queue, the OCR worker and the status poller are not wired up yet —
-  pages currently stay `PENDING` after upload.
+- **Day 3–4:** `POST /api/documents` and `GET /api/documents/{id}` —
+  upload validation, PDF-to-page-image splitting (PDFBox), MinIO-backed
+  storage, OCR batching into chunks of 10 pages, a RabbitMQ-backed OCR
+  worker, and a scheduled status poller. A 12-page PDF upload now goes
+  all the way to 12 pages of transcribed text: it produces two
+  `ocr_batch` rows (a 10-page and a 2-page chunk), each submitted to
+  Sarvam Document AI Digitise, polled with backoff, and applied back
+  onto the `Page` rows as `OCR_DONE` with `original_text` and a
+  `text_hash`.
+  - The Digitise result ZIP's per-page text field name isn't pinned by
+    Sarvam's public docs, so it's read from a configured candidate
+    list (`chitthi.ocr.result.text-fields`) with a longest-string
+    fallback; `SarvamDigitiseSmokeTest` makes one real, tagged,
+    opt-in call to confirm and pin the real field name.
+  - Idempotency here is a per-batch atomic claim (an `UPDATE ...
+    WHERE status = 'PENDING'`), not yet the `stage_task` idempotency
+    key + transactional outbox the requirements doc describes — that,
+    along with the Resilience4j rate limiter and dead-letter retry
+    queue, is scheduled for Day 8–9.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
@@ -80,8 +93,11 @@ mvn clean verify
 ```
 
 Flyway migrates the schema on application startup. Tests use WireMock
-for Sarvam contract tests and Testcontainers for Postgres/RabbitMQ —
-no real Sarvam API calls happen in the standard test suite.
+for Sarvam contract tests and Testcontainers for Postgres/RabbitMQ/MinIO
+— no real Sarvam API calls happen in the standard test suite. A tagged
+smoke test that does make one real, paid Digitise call is excluded by
+default; run it deliberately with `mvn test -Dgroups=smoke` once
+`SARVAM_API_KEY` is set.
 
 ## Configuration
 

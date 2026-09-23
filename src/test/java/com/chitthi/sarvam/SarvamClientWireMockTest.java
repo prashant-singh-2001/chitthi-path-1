@@ -45,7 +45,10 @@ class SarvamClientWireMockTest {
                 .defaultHeader("api-subscription-key", "test-key")
                 .requestFactory(new JdkClientHttpRequestFactory(httpClient))
                 .build();
-        sarvamClient = new SarvamClient(restClient);
+        RestClient downloadRestClient = RestClient.builder()
+                .requestFactory(new JdkClientHttpRequestFactory(httpClient))
+                .build();
+        sarvamClient = new SarvamClient(restClient, downloadRestClient);
     }
 
     @AfterEach
@@ -93,5 +96,19 @@ class SarvamClientWireMockTest {
         DownloadUrlResponse response = sarvamClient.getDownloadUrl("job-123");
 
         assertThat(response.downloadUrl()).isEqualTo("https://storage.sarvam.ai/job-123.zip");
+    }
+
+    @Test
+    void downloadResult_fetchesBytesWithoutTheSubscriptionKeyHeader() {
+        wireMockServer.stubFor(get(urlPathMatching("/results/job-123.zip"))
+                .withHeader("api-subscription-key", com.github.tomakehurst.wiremock.client.WireMock.absent())
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/zip")
+                        .withBody("fake-zip-bytes".getBytes())));
+
+        byte[] result = sarvamClient.downloadResult(wireMockServer.baseUrl() + "/results/job-123.zip");
+
+        assertThat(result).isEqualTo("fake-zip-bytes".getBytes());
     }
 }

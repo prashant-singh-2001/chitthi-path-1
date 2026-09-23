@@ -19,9 +19,11 @@ import org.springframework.web.client.RestClient;
 public class SarvamClient {
 
     private final RestClient restClient;
+    private final RestClient downloadRestClient;
 
-    public SarvamClient(RestClient sarvamRestClient) {
+    public SarvamClient(RestClient sarvamRestClient, RestClient sarvamDownloadRestClient) {
         this.restClient = sarvamRestClient;
+        this.downloadRestClient = sarvamDownloadRestClient;
     }
 
     /**
@@ -59,5 +61,19 @@ public class SarvamClient {
                 .uri("/doc-ai/v1/job/{id}/download-url", jobId)
                 .retrieve()
                 .body(DownloadUrlResponse.class);
+    }
+
+    /**
+     * Fetches the Digitise result ZIP from the presigned URL returned by
+     * {@link #getDownloadUrl}. Deliberately uses a separate client with no
+     * {@code api-subscription-key} header - that URL points at Sarvam's
+     * storage host, not {@code sarvam.base-url}, and the key must not be sent
+     * to a third party.
+     */
+    public byte[] downloadResult(String downloadUrl) {
+        return downloadRestClient.get()
+                .uri(java.net.URI.create(downloadUrl))
+                .retrieve()
+                .body(byte[].class);
     }
 }
