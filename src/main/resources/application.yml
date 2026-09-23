@@ -53,7 +53,10 @@ chitthi:
       max-concurrency: 4
     poller:
       enabled: true
-      sweep-interval: 1s
+      # Plain milliseconds, not "1s": @Scheduled's fixedDelayString only
+      # accepts a bare long or an ISO-8601 duration, not the shorthand
+      # @ConfigurationProperties binding elsewhere in this file understands.
+      sweep-interval-ms: 1000
       claim-batch-size: 20
     poll:
       # Sarvam's status endpoint is async; 5s matches the requirements doc's

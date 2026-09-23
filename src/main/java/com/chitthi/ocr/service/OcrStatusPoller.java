@@ -59,7 +59,7 @@ public class OcrStatusPoller {
         this.ocrProperties = ocrProperties;
     }
 
-    @Scheduled(fixedDelayString = "${chitthi.ocr.poller.sweep-interval:1s}")
+    @Scheduled(fixedDelayString = "${chitthi.ocr.poller.sweep-interval-ms:1000}")
     public void sweep() {
         pollDueJobs();
         redispatchStalledBatches();

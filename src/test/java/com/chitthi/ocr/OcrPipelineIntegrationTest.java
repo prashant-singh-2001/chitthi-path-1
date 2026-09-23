@@ -76,7 +76,7 @@ import static org.awaitility.Awaitility.await;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         // Production backoff starts at 5s; at that rate this test's two
         // batches x two poll cycles would take the better part of a minute.
-        "chitthi.ocr.poller.sweep-interval=200ms",
+        "chitthi.ocr.poller.sweep-interval-ms=200",
         "chitthi.ocr.poll.initial-delay=200ms",
         "chitthi.ocr.poll.max-delay=500ms",
         "chitthi.ocr.poll.jitter-ratio=0"

@@ -56,7 +56,7 @@ class OcrPollScheduleTest {
     private OcrProperties ocrProperties(OcrProperties.Poll poll) {
         return new OcrProperties(
                 new OcrProperties.Worker(true, 2, 4),
-                new OcrProperties.Poller(true, Duration.ofSeconds(1), 20),
+                new OcrProperties.Poller(true, 20),
                 poll,
                 new OcrProperties.Dispatch(Duration.ofSeconds(60), 3),
                 33_554_432L,

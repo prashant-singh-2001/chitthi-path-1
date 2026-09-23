@@ -32,7 +32,15 @@ public record OcrProperties(
     public record Worker(boolean enabled, int concurrency, int maxConcurrency) {
     }
 
-    public record Poller(boolean enabled, Duration sweepInterval, int claimBatchSize) {
+    /**
+     * The sweep interval itself is read directly off
+     * {@code chitthi.ocr.poller.sweep-interval-ms} by {@code @Scheduled}'s
+     * placeholder, in plain milliseconds - {@code @Scheduled}'s
+     * {@code fixedDelayString} only accepts a plain long or an ISO-8601
+     * duration, not the "1s"/"200ms" shorthand {@code @ConfigurationProperties}
+     * binding understands, so it is deliberately not a field here.
+     */
+    public record Poller(boolean enabled, int claimBatchSize) {
     }
 
     /** The backoff curve {@code OcrPollSchedule} implements: initialDelay * multiplier^(n-1), capped at maxDelay. */
