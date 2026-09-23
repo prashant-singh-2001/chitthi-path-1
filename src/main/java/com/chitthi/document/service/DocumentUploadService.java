@@ -79,7 +79,15 @@ public class DocumentUploadService {
 
     private List<PageImage> toPageImages(List<MultipartFile> files) {
         if (files.size() == 1 && PDF_CONTENT_TYPE.equals(files.get(0).getContentType())) {
-            return pdfPageSplitter.split(readBytes(files.get(0)));
+            byte[] pdfBytes = readBytes(files.get(0));
+            // Count before rendering: a page-limit rejection must not first pay
+            // for rendering every page of an oversized PDF at 200 DPI.
+            int pageCount = pdfPageSplitter.countPages(pdfBytes);
+            if (pageCount > MAX_PAGES) {
+                throw new UploadValidationException(
+                        "Document has %d pages, exceeding the %d page limit".formatted(pageCount, MAX_PAGES));
+            }
+            return pdfPageSplitter.split(pdfBytes);
         }
 
         List<PageImage> pageImages = new java.util.ArrayList<>();

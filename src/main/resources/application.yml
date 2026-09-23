@@ -2,6 +2,13 @@ spring:
   application:
     name: chitthi
 
+  servlet:
+    multipart:
+      # FR1's 20 MB-per-file limit is unreachable against Boot's 1 MB/10 MB
+      # defaults; max-request-size covers a 30-image batch upload.
+      max-file-size: 20MB
+      max-request-size: 64MB
+
   datasource:
     url: jdbc:postgresql://localhost:55432/chitthi
     username: chitthi
