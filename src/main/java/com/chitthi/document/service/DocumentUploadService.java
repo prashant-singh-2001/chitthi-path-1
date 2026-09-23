@@ -87,7 +87,7 @@ public class DocumentUploadService {
             pages.add(new Page(document.getId(), pageImage.pageNo(), imageKey));
         }
 
-        persistenceService.persistPages(pages);
+        persistenceService.persistPages(document, pages);
         return document;
     }
 

@@ -67,7 +67,7 @@ class DocumentUploadServiceTest {
         // transaction at all.
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Page>> pagesCaptor = ArgumentCaptor.forClass(List.class);
-        verify(persistenceService).persistPages(pagesCaptor.capture());
+        verify(persistenceService).persistPages(any(), pagesCaptor.capture());
         assertThat(pagesCaptor.getValue()).hasSize(2)
                 .extracting(Page::getPageNo)
                 .containsExactly(1, 2);
