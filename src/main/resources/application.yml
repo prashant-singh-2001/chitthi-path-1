@@ -28,12 +28,28 @@ spring:
     port: 5672
     username: chitthi
     password: chitthi
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2s
+          multiplier: 2
+          max-interval: 10s
 
 minio:
   endpoint: http://localhost:9000
   access-key: chitthi
   secret-key: chitthi123
   bucket: chitthi-documents
+
+chitthi:
+  ocr:
+    worker:
+      # Two consumers at prefetch 1: fairness across batches matters more
+      # than throughput, since a submit is a slow, expensive paid call.
+      concurrency: 2
+      max-concurrency: 4
 
 sarvam:
   base-url: https://api.sarvam.ai
