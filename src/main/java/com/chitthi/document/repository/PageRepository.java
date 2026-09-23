@@ -9,4 +9,6 @@ import java.util.UUID;
 public interface PageRepository extends JpaRepository<Page, UUID> {
 
     List<Page> findByDocumentIdOrderByPageNo(UUID documentId);
+
+    List<Page> findByDocumentIdAndPageNoBetweenOrderByPageNo(UUID documentId, int firstPage, int lastPage);
 }

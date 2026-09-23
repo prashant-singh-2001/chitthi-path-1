@@ -26,4 +26,22 @@ public class RestClientConfig {
                 .requestFactory(new JdkClientHttpRequestFactory(httpClient))
                 .build();
     }
+
+    /**
+     * A separate client with no base URL and no default headers, used only
+     * for {@code SarvamClient.downloadResult}. The Digitise download URL
+     * points at Sarvam's own storage (S3/GCS-style), a different host from
+     * {@code sarvam.base-url} - reusing {@link #sarvamRestClient} would send
+     * the {@code api-subscription-key} header to that third-party host.
+     */
+    @Bean
+    public RestClient sarvamDownloadRestClient() {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+
+        return RestClient.builder()
+                .requestFactory(new JdkClientHttpRequestFactory(httpClient))
+                .build();
+    }
 }

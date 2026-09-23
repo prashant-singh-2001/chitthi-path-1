@@ -5,6 +5,7 @@ import com.chitthi.ocr.service.OcrBatchPlanner;
 import com.chitthi.sarvam.SarvamProperties;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -14,12 +15,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class OcrBatchPlannerTest {
 
     // chunk size 10, matching sarvam.pipeline.ocr-max-pages-per-chunk in application.yml
-    private final SarvamProperties properties = new SarvamProperties(
+    private final SarvamProperties sarvamProperties = new SarvamProperties(
             "https://api.sarvam.ai", "test-key",
             new SarvamProperties.RateLimits(10),
             new SarvamProperties.Pipeline(10, 2000, 2500, 5));
 
-    private final OcrBatchPlanner planner = new OcrBatchPlanner(properties);
+    private final OcrProperties ocrProperties = new OcrProperties(
+            new OcrProperties.Worker(true, 2, 4),
+            new OcrProperties.Poller(true, Duration.ofSeconds(1), 20, Duration.ofSeconds(30)),
+            new OcrProperties.Poll(Duration.ofSeconds(5), 1.5, Duration.ofSeconds(60), 0.2, 30),
+            new OcrProperties.Dispatch(Duration.ofSeconds(60), 3),
+            33_554_432L,
+            new OcrProperties.Result(33_554_432L, List.of("markdown")));
+
+    private final OcrBatchPlanner planner = new OcrBatchPlanner(sarvamProperties, ocrProperties);
 
     @Test
     void twelvePages_splitsIntoTenAndTwo() {
@@ -70,5 +79,15 @@ class OcrBatchPlannerTest {
     void zeroPages_isRejected() {
         assertThatThrownBy(() -> planner.plan(UUID.randomUUID(), 0))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void createdBatches_getADispatchDeadlineBeforeAnyPublishHappens() {
+        List<OcrBatch> batches = planner.plan(UUID.randomUUID(), 1);
+
+        // Nothing has been submitted or even published yet, but next_poll_at
+        // must already be set - it's what lets the poller's future redispatch
+        // sweep notice a batch whose after-commit publish never arrived.
+        assertThat(batches.get(0).getNextPollAt()).isAfter(java.time.OffsetDateTime.now());
     }
 }

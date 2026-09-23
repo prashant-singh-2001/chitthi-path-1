@@ -1,5 +1,6 @@
 package com.chitthi.messaging;
 
+import com.chitthi.ocr.OcrProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
@@ -14,7 +15,6 @@ import org.springframework.amqp.support.converter.DefaultJackson2JavaTypeMapper;
 import org.springframework.amqp.support.converter.Jackson2JavaTypeMapper;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -111,15 +111,14 @@ public class RabbitMqConfig {
     public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
             ConnectionFactory connectionFactory,
             MessageConverter jsonMessageConverter,
-            @Value("${chitthi.ocr.worker.concurrency:2}") int concurrency,
-            @Value("${chitthi.ocr.worker.max-concurrency:4}") int maxConcurrency) {
+            OcrProperties ocrProperties) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(jsonMessageConverter);
         factory.setDefaultRequeueRejected(false);
         factory.setPrefetchCount(1);
-        factory.setConcurrentConsumers(concurrency);
-        factory.setMaxConcurrentConsumers(maxConcurrency);
+        factory.setConcurrentConsumers(ocrProperties.worker().concurrency());
+        factory.setMaxConcurrentConsumers(ocrProperties.worker().maxConcurrency());
         return factory;
     }
 }

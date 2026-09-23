@@ -46,10 +46,37 @@ minio:
 chitthi:
   ocr:
     worker:
+      enabled: true
       # Two consumers at prefetch 1: fairness across batches matters more
       # than throughput, since a submit is a slow, expensive paid call.
       concurrency: 2
       max-concurrency: 4
+    poller:
+      enabled: true
+      sweep-interval: 1s
+      claim-batch-size: 20
+      claim-lease: 30s
+    poll:
+      # Sarvam's status endpoint is async; 5s matches the requirements doc's
+      # stated starting interval. Capped growth with jitter keeps multiple
+      # batches from a multi-chunk document polling in lockstep forever.
+      initial-delay: 5s
+      multiplier: 1.5
+      max-delay: 60s
+      jitter-ratio: 0.2
+      max-attempts: 30
+    dispatch:
+      # How long a freshly created batch waits before the poller's
+      # redispatch sweep assumes its after-commit publish never happened.
+      lease: 60s
+      max-submit-attempts: 3
+    max-payload-bytes: 33554432
+    result:
+      max-unzipped-bytes: 33554432
+      # The Digitise output's per-page text field name isn't pinned by the
+      # docs (see PageTextExtractor). Adding a name here needs no code
+      # change - see SarvamDigitiseSmokeTest for how to find the real one.
+      text-fields: [markdown, md, text, content, page_content, extracted_text, output]
 
 sarvam:
   base-url: https://api.sarvam.ai
