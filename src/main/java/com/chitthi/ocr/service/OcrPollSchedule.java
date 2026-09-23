@@ -1,6 +1,7 @@
 package com.chitthi.ocr.service;
 
 import com.chitthi.ocr.OcrProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -23,6 +24,12 @@ public class OcrPollSchedule {
     private final OcrProperties.Poll pollProperties;
     private final Random random;
 
+    // Explicit @Autowired is required, not decoration: with two declared
+    // constructors (this one, plus the package-private one below for
+    // deterministic jitter tests), Spring's implicit single-constructor
+    // autowiring rule doesn't apply, and it otherwise falls back to a
+    // no-arg constructor that doesn't exist here.
+    @Autowired
     public OcrPollSchedule(OcrProperties ocrProperties) {
         this(ocrProperties, new Random());
     }
