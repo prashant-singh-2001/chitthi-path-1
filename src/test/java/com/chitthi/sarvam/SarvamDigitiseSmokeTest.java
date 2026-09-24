@@ -79,7 +79,9 @@ class SarvamDigitiseSmokeTest {
                 "https://api.sarvam.ai",
                 System.getenv("SARVAM_API_KEY"),
                 new SarvamProperties.RateLimits(10),
-                new SarvamProperties.Pipeline(10, 2000, 2500, 5));
+                new SarvamProperties.Pipeline(10, 2000, 2500, 5),
+                new SarvamProperties.Translate("sarvam-translate:v1"),
+                new SarvamProperties.Tts("bulbul:v3", "shubh", 22050));
 
         HttpClient httpClient = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
         RestClient restClient = RestClient.builder()
@@ -90,7 +92,7 @@ class SarvamDigitiseSmokeTest {
         RestClient downloadRestClient = RestClient.builder()
                 .requestFactory(new JdkClientHttpRequestFactory(httpClient))
                 .build();
-        return new SarvamClient(restClient, downloadRestClient);
+        return new SarvamClient(restClient, downloadRestClient, properties);
     }
 
     /** A single generated page with readable text, zipped exactly as {@code OcrPayloadPackager} would produce. */

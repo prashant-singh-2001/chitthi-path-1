@@ -90,6 +90,12 @@ sarvam:
     translate-max-chars-per-request: 2000
     tts-max-chars-per-request: 2500
     concurrency: 5
+  translate:
+    model: sarvam-translate:v1
+  tts:
+    model: bulbul:v3
+    speaker: shubh
+    sample-rate: 22050
 
 management:
   endpoints:

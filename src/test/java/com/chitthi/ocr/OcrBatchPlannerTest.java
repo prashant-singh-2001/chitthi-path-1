@@ -18,7 +18,9 @@ class OcrBatchPlannerTest {
     private final SarvamProperties sarvamProperties = new SarvamProperties(
             "https://api.sarvam.ai", "test-key",
             new SarvamProperties.RateLimits(10),
-            new SarvamProperties.Pipeline(10, 2000, 2500, 5));
+            new SarvamProperties.Pipeline(10, 2000, 2500, 5),
+            new SarvamProperties.Translate("sarvam-translate:v1"),
+            new SarvamProperties.Tts("bulbul:v3", "shubh", 22050));
 
     private final OcrProperties ocrProperties = new OcrProperties(
             new OcrProperties.Worker(true, 2, 4),
