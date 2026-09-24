@@ -15,6 +15,7 @@ import org.springframework.amqp.support.converter.DefaultJackson2JavaTypeMapper;
 import org.springframework.amqp.support.converter.Jackson2JavaTypeMapper;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -103,17 +104,25 @@ public class RabbitMqConfig {
      * favors fairness over throughput - an OCR batch submit is slow (a
      * multi-megabyte ZIP upload) and expensive (a paid, rate-limited call),
      * so one consumer should not hoard several while others sit idle.
-     * {@code defaultRequeueRejected(false)} ensures a poisoned message
-     * reaches the dead-letter queue after retries are exhausted instead of
+     *
+     * <p>Built from {@link SimpleRabbitListenerContainerFactoryConfigurer}
+     * rather than {@code new SimpleRabbitListenerContainerFactory()} so
+     * {@code spring.rabbitmq.listener.simple.retry} actually applies -
+     * constructing the factory directly silently ignored that whole
+     * configuration block, so a failing message skipped straight past its 3
+     * configured retries to the dead-letter queue.
+     * {@code defaultRequeueRejected(false)} still governs what happens once
+     * retries (now real) are exhausted: reject to the DLQ instead of
      * looping forever.
      */
     @Bean
     public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
             ConnectionFactory connectionFactory,
             MessageConverter jsonMessageConverter,
+            SimpleRabbitListenerContainerFactoryConfigurer configurer,
             OcrProperties ocrProperties) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
-        factory.setConnectionFactory(connectionFactory);
+        configurer.configure(factory, connectionFactory);
         factory.setMessageConverter(jsonMessageConverter);
         factory.setDefaultRequeueRejected(false);
         factory.setPrefetchCount(1);
