@@ -18,6 +18,9 @@ public final class PipelineQueues {
     public static final String TTS_QUEUE = "tts.queue";
     public static final String TTS_DEAD_LETTER_QUEUE = "tts.queue.dlq";
 
+    public static final String ASSEMBLE_QUEUE = "assemble.queue";
+    public static final String ASSEMBLE_DEAD_LETTER_QUEUE = "assemble.queue.dlq";
+
     private PipelineQueues() {
     }
 }

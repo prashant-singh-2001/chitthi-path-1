@@ -111,6 +111,30 @@ public class RabbitMqConfig {
                 .with(PipelineQueues.TTS_DEAD_LETTER_QUEUE);
     }
 
+    @Bean
+    public Queue assembleQueue() {
+        return QueueBuilder.durable(PipelineQueues.ASSEMBLE_QUEUE)
+                .deadLetterExchange(PipelineQueues.DEAD_LETTER_EXCHANGE)
+                .deadLetterRoutingKey(PipelineQueues.ASSEMBLE_DEAD_LETTER_QUEUE)
+                .build();
+    }
+
+    @Bean
+    public Queue assembleDeadLetterQueue() {
+        return QueueBuilder.durable(PipelineQueues.ASSEMBLE_DEAD_LETTER_QUEUE).build();
+    }
+
+    @Bean
+    public Binding assembleBinding(Queue assembleQueue, TopicExchange pipelineExchange) {
+        return BindingBuilder.bind(assembleQueue).to(pipelineExchange).with(PipelineQueues.ASSEMBLE_QUEUE);
+    }
+
+    @Bean
+    public Binding assembleDeadLetterBinding(Queue assembleDeadLetterQueue, DirectExchange deadLetterExchange) {
+        return BindingBuilder.bind(assembleDeadLetterQueue).to(deadLetterExchange)
+                .with(PipelineQueues.ASSEMBLE_DEAD_LETTER_QUEUE);
+    }
+
     /**
      * Built on Boot's auto-configured {@link ObjectMapper} (not a fresh one)
      * so {@code ParameterNamesModule} is registered and record payloads
