@@ -82,6 +82,9 @@ chitthi:
   translate:
     worker:
       enabled: true
+  tts:
+    worker:
+      enabled: true
 
 sarvam:
   base-url: https://api.sarvam.ai

@@ -28,4 +28,14 @@ public interface PageRepository extends JpaRepository<Page, UUID> {
             + "AND p.textHash = :textHash")
     int markTranslated(@Param("id") UUID id, @Param("translatedText") String translatedText,
                         @Param("textHash") String textHash);
+
+    /**
+     * The TTS stage's compare-and-set: only a page still TRANSLATED is
+     * updated, so a redelivered message that lands after a user's edit reset
+     * the page back to OCR_DONE cannot resurrect it as AUDIO_DONE.
+     */
+    @Modifying
+    @Query("UPDATE Page p SET p.status = com.chitthi.document.model.PageStatus.AUDIO_DONE "
+            + "WHERE p.id = :id AND p.status = com.chitthi.document.model.PageStatus.TRANSLATED")
+    int markAudioDone(@Param("id") UUID id);
 }
