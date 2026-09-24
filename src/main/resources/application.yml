@@ -79,6 +79,9 @@ chitthi:
       # docs (see PageTextExtractor). Adding a name here needs no code
       # change - see SarvamDigitiseSmokeTest for how to find the real one.
       text-fields: [markdown, md, text, content, page_content, extracted_text, output]
+  translate:
+    worker:
+      enabled: true
 
 sarvam:
   base-url: https://api.sarvam.ai

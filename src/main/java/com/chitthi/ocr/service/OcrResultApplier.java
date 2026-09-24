@@ -7,11 +7,13 @@ import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
 import com.chitthi.document.service.TextHasher;
+import com.chitthi.ocr.event.PageOcrCompletedEvent;
 import com.chitthi.ocr.model.OcrBatch;
 import com.chitthi.ocr.model.OcrBatchStatus;
 import com.chitthi.ocr.model.PageRange;
 import com.chitthi.ocr.repository.OcrBatchRepository;
 import com.chitthi.ocr.result.ParsedPage;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,12 +34,14 @@ public class OcrResultApplier {
     private final PageRepository pageRepository;
     private final OcrBatchRepository ocrBatchRepository;
     private final DocumentRepository documentRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public OcrResultApplier(PageRepository pageRepository, OcrBatchRepository ocrBatchRepository,
-                             DocumentRepository documentRepository) {
+                             DocumentRepository documentRepository, ApplicationEventPublisher eventPublisher) {
         this.pageRepository = pageRepository;
         this.ocrBatchRepository = ocrBatchRepository;
         this.documentRepository = documentRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -67,6 +71,7 @@ public class OcrResultApplier {
                 page.setOriginalText(text);
                 page.setTextHash(TextHasher.sha256Hex(text));
                 page.setStatus(PageStatus.OCR_DONE);
+                eventPublisher.publishEvent(new PageOcrCompletedEvent(page.getId()));
             } else {
                 page.setStatus(PageStatus.FAILED);
                 everyPageRecovered = false;

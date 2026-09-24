@@ -1,6 +1,7 @@
 package com.chitthi.messaging;
 
 import com.chitthi.ocr.OcrProperties;
+import com.chitthi.sarvam.SarvamProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
@@ -21,10 +22,9 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * The pipeline's message broker topology. One topic exchange carries every
- * stage's queue (only OCR exists so far; translate and TTS join it on
- * Day 5-6), backed by one dead-letter exchange so a poison message always has
- * somewhere durable to land instead of being silently dropped or requeued
- * forever.
+ * stage's queue, backed by one dead-letter exchange so a poison message
+ * always has somewhere durable to land instead of being silently dropped or
+ * requeued forever.
  */
 @Configuration
 public class RabbitMqConfig {
@@ -61,6 +61,30 @@ public class RabbitMqConfig {
     public Binding ocrDeadLetterBinding(Queue ocrDeadLetterQueue, DirectExchange deadLetterExchange) {
         return BindingBuilder.bind(ocrDeadLetterQueue).to(deadLetterExchange)
                 .with(PipelineQueues.OCR_DEAD_LETTER_QUEUE);
+    }
+
+    @Bean
+    public Queue translateQueue() {
+        return QueueBuilder.durable(PipelineQueues.TRANSLATE_QUEUE)
+                .deadLetterExchange(PipelineQueues.DEAD_LETTER_EXCHANGE)
+                .deadLetterRoutingKey(PipelineQueues.TRANSLATE_DEAD_LETTER_QUEUE)
+                .build();
+    }
+
+    @Bean
+    public Queue translateDeadLetterQueue() {
+        return QueueBuilder.durable(PipelineQueues.TRANSLATE_DEAD_LETTER_QUEUE).build();
+    }
+
+    @Bean
+    public Binding translateBinding(Queue translateQueue, TopicExchange pipelineExchange) {
+        return BindingBuilder.bind(translateQueue).to(pipelineExchange).with(PipelineQueues.TRANSLATE_QUEUE);
+    }
+
+    @Bean
+    public Binding translateDeadLetterBinding(Queue translateDeadLetterQueue, DirectExchange deadLetterExchange) {
+        return BindingBuilder.bind(translateDeadLetterQueue).to(deadLetterExchange)
+                .with(PipelineQueues.TRANSLATE_DEAD_LETTER_QUEUE);
     }
 
     /**
@@ -128,6 +152,28 @@ public class RabbitMqConfig {
         factory.setPrefetchCount(1);
         factory.setConcurrentConsumers(ocrProperties.worker().concurrency());
         factory.setMaxConcurrentConsumers(ocrProperties.worker().maxConcurrency());
+        return factory;
+    }
+
+    /**
+     * Shared by the translate, TTS and assemble listeners: their concurrency
+     * is a single per-page cap ({@code sarvam.pipeline.concurrency}) rather
+     * than the two-tier concurrent/max split OCR uses, since each page of a
+     * document only ever makes one paid call at a time per stage.
+     */
+    @Bean
+    public SimpleRabbitListenerContainerFactory pipelineListenerContainerFactory(
+            ConnectionFactory connectionFactory,
+            MessageConverter jsonMessageConverter,
+            SimpleRabbitListenerContainerFactoryConfigurer configurer,
+            SarvamProperties sarvamProperties) {
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        configurer.configure(factory, connectionFactory);
+        factory.setMessageConverter(jsonMessageConverter);
+        factory.setDefaultRequeueRejected(false);
+        factory.setPrefetchCount(1);
+        factory.setConcurrentConsumers(sarvamProperties.pipeline().concurrency());
+        factory.setMaxConcurrentConsumers(sarvamProperties.pipeline().concurrency());
         return factory;
     }
 }

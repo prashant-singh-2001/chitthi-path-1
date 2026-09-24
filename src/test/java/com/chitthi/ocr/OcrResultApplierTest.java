@@ -12,6 +12,7 @@ import com.chitthi.ocr.repository.OcrBatchRepository;
 import com.chitthi.ocr.result.ParsedPage;
 import com.chitthi.ocr.service.OcrResultApplier;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Optional;
@@ -29,7 +30,9 @@ class OcrResultApplierTest {
     private final PageRepository pageRepository = mock(PageRepository.class);
     private final OcrBatchRepository ocrBatchRepository = mock(OcrBatchRepository.class);
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
-    private final OcrResultApplier applier = new OcrResultApplier(pageRepository, ocrBatchRepository, documentRepository);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final OcrResultApplier applier =
+            new OcrResultApplier(pageRepository, ocrBatchRepository, documentRepository, eventPublisher);
 
     @Test
     void applyParsedResult_marksEveryPageOcrDoneWhenAllTextIsRecovered() {
@@ -49,6 +52,8 @@ class OcrResultApplierTest {
         assertThat(batch.getStatus()).isEqualTo(OcrBatchStatus.COMPLETED);
         assertThat(batch.getNextPollAt()).isNull();
         verify(documentRepository, never()).findById(any());
+        verify(eventPublisher, org.mockito.Mockito.times(2))
+                .publishEvent(org.mockito.ArgumentMatchers.any(com.chitthi.ocr.event.PageOcrCompletedEvent.class));
     }
 
     @Test
@@ -70,6 +75,8 @@ class OcrResultApplierTest {
         assertThat(pages.get(1).getStatus()).isEqualTo(PageStatus.FAILED);
         assertThat(batch.getStatus()).isEqualTo(OcrBatchStatus.PARTIALLY_COMPLETED);
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.PARTIAL);
+        verify(eventPublisher, org.mockito.Mockito.times(1))
+                .publishEvent(org.mockito.ArgumentMatchers.any(com.chitthi.ocr.event.PageOcrCompletedEvent.class));
     }
 
     @Test
