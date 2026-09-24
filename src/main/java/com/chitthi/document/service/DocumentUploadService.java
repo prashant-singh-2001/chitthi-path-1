@@ -3,6 +3,7 @@ package com.chitthi.document.service;
 import com.chitthi.document.model.Document;
 import com.chitthi.document.model.Page;
 import com.chitthi.document.repository.DocumentRepository;
+import com.chitthi.sarvam.SarvamLanguage;
 import com.chitthi.storage.ObjectStorageService;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -61,6 +62,9 @@ public class DocumentUploadService {
 
     public Document upload(String ownerId, String title, String language,
                             List<String> tags, Integer year, List<MultipartFile> files) {
+        if (!SarvamLanguage.isKnown(language)) {
+            throw new UploadValidationException("Unsupported language code: " + language);
+        }
         if (files == null || files.isEmpty()) {
             throw new UploadValidationException("At least one file is required");
         }
