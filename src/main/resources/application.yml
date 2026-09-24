@@ -88,6 +88,8 @@ chitthi:
   assemble:
     worker:
       enabled: true
+  audio:
+    url-ttl: 15m
 
 sarvam:
   base-url: https://api.sarvam.ai
