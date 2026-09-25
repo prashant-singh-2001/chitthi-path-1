@@ -7,6 +7,9 @@ import com.chitthi.document.service.DocumentNotFoundException;
 import com.chitthi.document.service.DocumentUploadService;
 import com.chitthi.document.web.AudioUrlResponse;
 import com.chitthi.document.web.DocumentController;
+import com.chitthi.progress.ProgressProperties;
+import com.chitthi.progress.ProgressSnapshotService;
+import com.chitthi.progress.SseEmitterRegistry;
 import com.chitthi.storage.ObjectStorageService;
 import org.junit.jupiter.api.Test;
 
@@ -25,8 +28,12 @@ class DocumentControllerAudioTest {
     private final PageRepository pageRepository = mock(PageRepository.class);
     private final ObjectStorageService storageService = mock(ObjectStorageService.class);
     private final AudioProperties audioProperties = new AudioProperties(Duration.ofMinutes(15));
+    private final SseEmitterRegistry emitterRegistry = mock(SseEmitterRegistry.class);
+    private final ProgressSnapshotService snapshotService = mock(ProgressSnapshotService.class);
+    private final ProgressProperties progressProperties = new ProgressProperties(Duration.ofMinutes(30), 15000);
     private final DocumentController controller = new DocumentController(
-            uploadService, documentRepository, pageRepository, storageService, audioProperties);
+            uploadService, documentRepository, pageRepository, storageService, audioProperties,
+            emitterRegistry, snapshotService, progressProperties);
 
     @Test
     void rejectsAnUnknownLanguage() {
