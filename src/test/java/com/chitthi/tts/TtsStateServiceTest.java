@@ -1,6 +1,7 @@
 package com.chitthi.tts;
 
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.progress.DocumentProgressEvent;
 import com.chitthi.tts.event.PageAudioDoneEvent;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -29,6 +30,7 @@ class TtsStateServiceTest {
 
         assertThat(result).isTrue();
         verify(eventPublisher).publishEvent(new PageAudioDoneEvent(documentId));
+        verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 
     @Test
@@ -41,5 +43,6 @@ class TtsStateServiceTest {
 
         assertThat(result).isFalse();
         verify(eventPublisher, never()).publishEvent(new PageAudioDoneEvent(documentId));
+        verify(eventPublisher, never()).publishEvent(new DocumentProgressEvent(documentId));
     }
 }

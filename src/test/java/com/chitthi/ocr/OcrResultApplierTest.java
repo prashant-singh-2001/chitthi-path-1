@@ -11,6 +11,7 @@ import com.chitthi.ocr.model.OcrBatchStatus;
 import com.chitthi.ocr.repository.OcrBatchRepository;
 import com.chitthi.ocr.result.ParsedPage;
 import com.chitthi.ocr.service.OcrResultApplier;
+import com.chitthi.progress.DocumentProgressEvent;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -54,6 +55,7 @@ class OcrResultApplierTest {
         verify(documentRepository, never()).findById(any());
         verify(eventPublisher, org.mockito.Mockito.times(2))
                 .publishEvent(org.mockito.ArgumentMatchers.any(com.chitthi.ocr.event.PageOcrCompletedEvent.class));
+        verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 
     @Test
@@ -77,6 +79,7 @@ class OcrResultApplierTest {
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.PARTIAL);
         verify(eventPublisher, org.mockito.Mockito.times(1))
                 .publishEvent(org.mockito.ArgumentMatchers.any(com.chitthi.ocr.event.PageOcrCompletedEvent.class));
+        verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 
     @Test
@@ -117,6 +120,7 @@ class OcrResultApplierTest {
         assertThat(batch.getStatus()).isEqualTo(OcrBatchStatus.FAILED);
         assertThat(batch.getLastError()).isEqualTo("Sarvam job rejected");
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.PARTIAL);
+        verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 
     @Test

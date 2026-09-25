@@ -1,6 +1,7 @@
 package com.chitthi.tts;
 
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.progress.DocumentProgressEvent;
 import com.chitthi.tts.event.PageAudioDoneEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ public class TtsStateService {
         int updated = pageRepository.markAudioDone(pageId);
         if (updated > 0) {
             eventPublisher.publishEvent(new PageAudioDoneEvent(documentId));
+            eventPublisher.publishEvent(new DocumentProgressEvent(documentId));
         }
         return updated > 0;
     }

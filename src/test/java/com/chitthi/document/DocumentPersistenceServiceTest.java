@@ -10,6 +10,7 @@ import com.chitthi.ocr.event.OcrBatchCreatedEvent;
 import com.chitthi.ocr.model.OcrBatch;
 import com.chitthi.ocr.repository.OcrBatchRepository;
 import com.chitthi.ocr.service.OcrBatchPlanner;
+import com.chitthi.progress.DocumentProgressEvent;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -53,6 +54,7 @@ class DocumentPersistenceServiceTest {
         verify(documentRepository).save(document);
 
         verify(eventPublisher, times(1)).publishEvent(any(OcrBatchCreatedEvent.class));
+        verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 
     @Test

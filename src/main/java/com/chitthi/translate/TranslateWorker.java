@@ -81,7 +81,7 @@ public class TranslateWorker {
                 ? originalText
                 : translate(originalText, document.getLanguage());
 
-        boolean applied = stateService.markTranslated(page.getId(), translatedText, page.getTextHash());
+        boolean applied = stateService.markTranslated(page.getId(), page.getDocumentId(), translatedText, page.getTextHash());
         if (!applied) {
             log.info("Page {} changed before its translation completed; discarding", page.getId());
         }

@@ -49,7 +49,7 @@ class TranslateWorkerTest {
         worker.onMessage(new TranslateMessage(pageId));
 
         verify(sarvamClient, never()).translate(anyString(), anyString(), anyString());
-        verify(stateService, never()).markTranslated(any(), any(), any());
+        verify(stateService, never()).markTranslated(any(), any(), any(), any());
     }
 
     @Test
@@ -59,7 +59,7 @@ class TranslateWorkerTest {
 
         worker.onMessage(new TranslateMessage(pageId));
 
-        verify(stateService, never()).markTranslated(any(), any(), any());
+        verify(stateService, never()).markTranslated(any(), any(), any(), any());
     }
 
     @Test
@@ -73,12 +73,12 @@ class TranslateWorkerTest {
         Document document = new Document("owner", "title", "en", null, null);
         when(pageRepository.findById(pageId)).thenReturn(Optional.of(page));
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
-        when(stateService.markTranslated(page.getId(), "hello world", "hash1")).thenReturn(true);
+        when(stateService.markTranslated(page.getId(), documentId, "hello world", "hash1")).thenReturn(true);
 
         worker.onMessage(new TranslateMessage(pageId));
 
         verify(sarvamClient, never()).translate(anyString(), anyString(), anyString());
-        verify(stateService).markTranslated(page.getId(), "hello world", "hash1");
+        verify(stateService).markTranslated(page.getId(), documentId, "hello world", "hash1");
     }
 
     @Test
@@ -96,12 +96,12 @@ class TranslateWorkerTest {
         when(pageRepository.findById(pageId)).thenReturn(Optional.of(page));
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(sarvamClient.translate(anyString(), eq("hi-IN"), eq("en-IN"))).thenReturn("translated");
-        when(stateService.markTranslated(eq(page.getId()), anyString(), eq("hash2"))).thenReturn(true);
+        when(stateService.markTranslated(eq(page.getId()), eq(documentId), anyString(), eq("hash2"))).thenReturn(true);
 
         worker.onMessage(new TranslateMessage(pageId));
 
         verify(sarvamClient, times(2)).translate(anyString(), eq("hi-IN"), eq("en-IN"));
-        verify(stateService).markTranslated(page.getId(), "translated translated", "hash2");
+        verify(stateService).markTranslated(page.getId(), documentId, "translated translated", "hash2");
     }
 
     @Test
@@ -115,7 +115,7 @@ class TranslateWorkerTest {
         Document document = new Document("owner", "title", "en", null, null);
         when(pageRepository.findById(pageId)).thenReturn(Optional.of(page));
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
-        when(stateService.markTranslated(page.getId(), "short text", "hash3")).thenReturn(false);
+        when(stateService.markTranslated(page.getId(), documentId, "short text", "hash3")).thenReturn(false);
 
         List<Page> before = List.of(page);
         worker.onMessage(new TranslateMessage(pageId));

@@ -13,6 +13,7 @@ import com.chitthi.ocr.model.OcrBatchStatus;
 import com.chitthi.ocr.model.PageRange;
 import com.chitthi.ocr.repository.OcrBatchRepository;
 import com.chitthi.ocr.result.ParsedPage;
+import com.chitthi.progress.DocumentProgressEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -84,6 +85,7 @@ public class OcrResultApplier {
         ocrBatchRepository.save(batch);
 
         refreshDocumentStatus(batch.getDocumentId());
+        eventPublisher.publishEvent(new DocumentProgressEvent(batch.getDocumentId()));
     }
 
     /**
@@ -113,6 +115,7 @@ public class OcrResultApplier {
         ocrBatchRepository.save(batch);
 
         refreshDocumentStatus(batch.getDocumentId());
+        eventPublisher.publishEvent(new DocumentProgressEvent(batch.getDocumentId()));
     }
 
     private OcrBatch requireBatch(UUID batchId) {
