@@ -191,19 +191,21 @@ class TranslateTtsPipelineIntegrationTest {
      * {@code SseEmitterRegistry} delivering them, and the stream completing
      * itself once the document reaches COMPLETE, exactly as a browser would
      * see it.
+     *
+     * <p>Deliberately a single page, not the 12-page document above: this
+     * test proves the streaming mechanism, not the Day 5-6 pipeline itself,
+     * and running the full 12-page pipeline twice in one test class pushed a
+     * CI runner into resource pressure that crashed its Postgres container.
      */
     @Test
     void sseStream_deliversProgressUntilTheDocumentCompletes() throws IOException, InterruptedException {
-        stubDigitiseSubmit("_1-10.zip", "job-1-10");
-        stubDigitiseSubmit("_11-12.zip", "job-11-12");
-        stubStatusCompleted("job-1-10");
-        stubStatusCompleted("job-11-12");
-        stubDownload("job-1-10", DigitiseResultZips.perPageJson(10, i -> "Chunk text page " + i));
-        stubDownload("job-11-12", DigitiseResultZips.perPageJson(2, i -> "Second chunk page " + i));
+        stubDigitiseSubmit("_1-1.zip", "job-1-1");
+        stubStatusCompleted("job-1-1");
+        stubDownload("job-1-1", DigitiseResultZips.perPageJson(1, i -> "Only page text"));
         stubTranslate();
         stubTextToSpeech();
 
-        UUID documentId = uploadTwelvePagePdf();
+        UUID documentId = uploadOnePagePdf();
 
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
@@ -251,7 +253,15 @@ class TranslateTtsPipelineIntegrationTest {
     }
 
     private UUID uploadTwelvePagePdf() throws IOException {
-        byte[] pdf = buildBlankPdf(12);
+        return uploadPdf(12);
+    }
+
+    private UUID uploadOnePagePdf() throws IOException {
+        return uploadPdf(1);
+    }
+
+    private UUID uploadPdf(int pageCount) throws IOException {
+        byte[] pdf = buildBlankPdf(pageCount);
 
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("files", new ByteArrayResource(pdf) {
