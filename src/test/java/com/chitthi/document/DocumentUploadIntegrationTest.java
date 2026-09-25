@@ -20,9 +20,9 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
+import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
@@ -44,6 +44,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * running the real OCR worker against the published batches - this class has
  * no WireMock stub for the Sarvam API, so a live listener here would either
  * hang retrying a connection or, worse, call the real api.sarvam.ai.
+ *
+ * <p>Object storage is faked with LocalStack's S3 service, not a real MinIO
+ * container - MinIO pulled its images from Docker Hub in September 2026 and
+ * gated quay.io's copy behind paid-tier auth, so neither registry serves a
+ * free anonymous pull any more. {@link com.chitthi.storage.ObjectStorageService}
+ * talks to it through the same MinIO Java client either way, since that
+ * client speaks the generic S3 API rather than anything MinIO-specific.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -54,9 +61,8 @@ class DocumentUploadIntegrationTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Container
-    static MinIOContainer minio = new MinIOContainer(
-            DockerImageName.parse("quay.io/minio/minio:RELEASE.2024-09-13T20-26-02Z")
-                    .asCompatibleSubstituteFor("minio/minio"));
+    static LocalStackContainer localstack = new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.8"))
+            .withServices(LocalStackContainer.Service.S3);
 
     @Container
     static RabbitMQContainer rabbitmq = new RabbitMQContainer("rabbitmq:3.13-management-alpine");
@@ -66,9 +72,10 @@ class DocumentUploadIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("minio.endpoint", minio::getS3URL);
-        registry.add("minio.access-key", minio::getUserName);
-        registry.add("minio.secret-key", minio::getPassword);
+        registry.add("minio.endpoint", () -> localstack.getEndpointOverride(LocalStackContainer.Service.S3).toString());
+        registry.add("minio.access-key", localstack::getAccessKey);
+        registry.add("minio.secret-key", localstack::getSecretKey);
+        registry.add("minio.region", localstack::getRegion);
         registry.add("spring.rabbitmq.host", rabbitmq::getHost);
         registry.add("spring.rabbitmq.port", rabbitmq::getAmqpPort);
         registry.add("spring.rabbitmq.username", rabbitmq::getAdminUsername);

@@ -42,6 +42,7 @@ minio:
   access-key: chitthi
   secret-key: chitthi123
   bucket: chitthi-documents
+  region: us-east-1
 
 chitthi:
   ocr:
