@@ -38,10 +38,14 @@ spring:
           max-interval: 10s
 
 minio:
-  endpoint: http://localhost:9000
-  access-key: chitthi
-  secret-key: chitthi123
+  # Points at the LocalStack S3 service in docker-compose.yml (see there for
+  # why - MinIO's own images are no longer freely pullable). The MinIO Java
+  # client works against it unchanged, since it speaks the generic S3 API.
+  endpoint: http://localhost:4566
+  access-key: test
+  secret-key: test
   bucket: chitthi-documents
+  region: us-east-1
 
 chitthi:
   ocr:
@@ -79,6 +83,17 @@ chitthi:
       # docs (see PageTextExtractor). Adding a name here needs no code
       # change - see SarvamDigitiseSmokeTest for how to find the real one.
       text-fields: [markdown, md, text, content, page_content, extracted_text, output]
+  translate:
+    worker:
+      enabled: true
+  tts:
+    worker:
+      enabled: true
+  assemble:
+    worker:
+      enabled: true
+  audio:
+    url-ttl: 15m
 
 sarvam:
   base-url: https://api.sarvam.ai
@@ -90,6 +105,12 @@ sarvam:
     translate-max-chars-per-request: 2000
     tts-max-chars-per-request: 2500
     concurrency: 5
+  translate:
+    model: sarvam-translate:v1
+  tts:
+    model: bulbul:v3
+    speaker: shubh
+    sample-rate: 22050
 
 management:
   endpoints:

@@ -7,7 +7,9 @@ public record SarvamProperties(
         String baseUrl,
         String apiSubscriptionKey,
         RateLimits rateLimits,
-        Pipeline pipeline
+        Pipeline pipeline,
+        Translate translate,
+        Tts tts
 ) {
     public record RateLimits(int visionRequestsPerMinute) {
     }
@@ -18,5 +20,11 @@ public record SarvamProperties(
             int ttsMaxCharsPerRequest,
             int concurrency
     ) {
+    }
+
+    public record Translate(String model) {
+    }
+
+    public record Tts(String model, String speaker, int sampleRate) {
     }
 }

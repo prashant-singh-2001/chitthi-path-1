@@ -28,9 +28,9 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
+import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
@@ -55,8 +55,11 @@ import static org.awaitility.Awaitility.await;
  * The Day 3-4 acceptance criterion: a 12-page PDF upload ends with 12 pages
  * of OCR text in Postgres, having gone through real chunking (two batches,
  * one 10-page and one 2-page), two real submit calls, two independent status
- * poll cycles, and two result downloads - all against a real Postgres, MinIO
- * and RabbitMQ, with only the Sarvam API itself stubbed via WireMock.
+ * poll cycles, and two result downloads - all against a real Postgres and
+ * RabbitMQ, plus LocalStack's S3 service standing in for object storage
+ * (MinIO's own images are no longer freely pullable - see the class-level
+ * note on {@code localstack} below), with only the Sarvam API itself stubbed
+ * via WireMock.
  *
  * <p>Two things that make this test correct rather than accidentally passing:
  * <ul>
@@ -86,10 +89,16 @@ class OcrPipelineIntegrationTest {
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
+    /**
+     * Stands in for MinIO: {@link com.chitthi.storage.ObjectStorageService}
+     * talks to it through the same MinIO Java client, which speaks the
+     * generic S3 API rather than anything MinIO-specific. Swapped in because
+     * MinIO removed its Docker Hub images in September 2026 and put quay.io's
+     * copy behind paid-tier auth, leaving no free image left to pull.
+     */
     @Container
-    static MinIOContainer minio = new MinIOContainer(
-            DockerImageName.parse("quay.io/minio/minio:RELEASE.2024-09-13T20-26-02Z")
-                    .asCompatibleSubstituteFor("minio/minio"));
+    static LocalStackContainer localstack = new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.8"))
+            .withServices(LocalStackContainer.Service.S3);
 
     @Container
     static RabbitMQContainer rabbitmq = new RabbitMQContainer("rabbitmq:3.13-management-alpine");
@@ -108,9 +117,10 @@ class OcrPipelineIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("minio.endpoint", minio::getS3URL);
-        registry.add("minio.access-key", minio::getUserName);
-        registry.add("minio.secret-key", minio::getPassword);
+        registry.add("minio.endpoint", () -> localstack.getEndpointOverride(LocalStackContainer.Service.S3).toString());
+        registry.add("minio.access-key", localstack::getAccessKey);
+        registry.add("minio.secret-key", localstack::getSecretKey);
+        registry.add("minio.region", localstack::getRegion);
         registry.add("spring.rabbitmq.host", rabbitmq::getHost);
         registry.add("spring.rabbitmq.port", rabbitmq::getAmqpPort);
         registry.add("spring.rabbitmq.username", rabbitmq::getAdminUsername);

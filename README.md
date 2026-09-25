@@ -66,6 +66,28 @@ section for the full page state machine.
     key + transactional outbox the requirements doc describes — that,
     along with the Resilience4j rate limiter and dead-letter retry
     queue, is scheduled for Day 8–9.
+- **Day 5–6:** translate and TTS stages, sentence chunking, and pure-Java
+  WAV stitching. Each page that finishes OCR is translated to English
+  (Sarvam Translate, source-language passthrough for English documents),
+  then synthesized into audio (Bulbul TTS) — an `en` track always, plus
+  an `orig` track when Bulbul supports the document's source language.
+  Once every page of a document is terminal, `DocumentAssembler` stitches
+  each track's per-page WAVs into one document-level track with
+  `javax.sound.sampled` (no FFmpeg) and marks the document `COMPLETE` or
+  `PARTIAL`. `GET /api/documents/{id}/audio?lang=orig|en` returns a
+  presigned MinIO URL, falling back from `orig` to `en` when the source
+  language has no Bulbul coverage. A 12-page Hindi PDF now plays end to
+  end in both languages.
+  - Also fixed a pre-existing bug from Day 3–4: the OCR listener
+    container factory built `SimpleRabbitListenerContainerFactory`
+    directly, which silently ignored `spring.rabbitmq.listener.simple.retry`
+    — a failing message skipped straight past its 3 configured retries
+    to the dead-letter queue. Every stage's factory now goes through
+    `SimpleRabbitListenerContainerFactoryConfigurer`.
+  - Same idempotency gap as Day 3–4: a redelivered translate/TTS message
+    can trigger a duplicate paid call even though the status/hash-guarded
+    write keeps the stored result correct. `stage_task` keys and rate
+    limiting are still Day 8–9.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
@@ -84,7 +106,11 @@ docker compose up -d
 
 Starts Postgres (`55432` on the host — `5432` is remapped because a
 native Postgres install already occupies it on this machine), RabbitMQ
-(`5672`, management UI on `15672`), and MinIO (`9000`, console on `9001`).
+(`5672`, management UI on `15672`), and LocalStack's S3 service (`4566`)
+standing in for object storage — MinIO's own images are no longer
+freely pullable from either Docker Hub or quay.io as of September 2026,
+so `ObjectStorageService`'s MinIO Java client points at LocalStack
+instead; it speaks the generic S3 API either way.
 
 ## Build and test
 
@@ -93,7 +119,7 @@ mvn clean verify
 ```
 
 Flyway migrates the schema on application startup. Tests use WireMock
-for Sarvam contract tests and Testcontainers for Postgres/RabbitMQ/MinIO
+for Sarvam contract tests and Testcontainers for Postgres/RabbitMQ/LocalStack
 — no real Sarvam API calls happen in the standard test suite. A tagged
 smoke test that does make one real, paid Digitise call is excluded by
 default; run it deliberately with `mvn test -Dgroups=smoke` once

@@ -48,7 +48,13 @@ class SarvamClientWireMockTest {
         RestClient downloadRestClient = RestClient.builder()
                 .requestFactory(new JdkClientHttpRequestFactory(httpClient))
                 .build();
-        sarvamClient = new SarvamClient(restClient, downloadRestClient);
+        SarvamProperties properties = new SarvamProperties(
+                wireMockServer.baseUrl(), "test-key",
+                new SarvamProperties.RateLimits(10),
+                new SarvamProperties.Pipeline(10, 2000, 2500, 5),
+                new SarvamProperties.Translate("sarvam-translate:v1"),
+                new SarvamProperties.Tts("bulbul:v3", "shubh", 22050));
+        sarvamClient = new SarvamClient(restClient, downloadRestClient, properties);
     }
 
     @AfterEach
@@ -110,5 +116,39 @@ class SarvamClientWireMockTest {
         byte[] result = sarvamClient.downloadResult(wireMockServer.baseUrl() + "/results/job-123.zip");
 
         assertThat(result).isEqualTo("fake-zip-bytes".getBytes());
+    }
+
+    @Test
+    void translate_sendsTheModelAndLanguagePairAndParsesTranslatedText() {
+        wireMockServer.stubFor(post(urlPathMatching("/translate"))
+                .withHeader("api-subscription-key", equalTo("test-key"))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath("$.model", equalTo("sarvam-translate:v1")))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath("$.source_language_code", equalTo("hi-IN")))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath("$.target_language_code", equalTo("en-IN")))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"translated_text\": \"hello\"}")));
+
+        String result = sarvamClient.translate("नमस्ते", "hi-IN", "en-IN");
+
+        assertThat(result).isEqualTo("hello");
+    }
+
+    @Test
+    void synthesize_decodesTheFirstBase64AudioEntry() {
+        String base64Audio = java.util.Base64.getEncoder().encodeToString("fake-wav-bytes".getBytes());
+        wireMockServer.stubFor(post(urlPathMatching("/text-to-speech"))
+                .withHeader("api-subscription-key", equalTo("test-key"))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath("$.model", equalTo("bulbul:v3")))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath("$.speaker", equalTo("shubh")))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"request_id\": \"req-1\", \"audios\": [\"" + base64Audio + "\"]}")));
+
+        byte[] result = sarvamClient.synthesize("hello", "en-IN");
+
+        assertThat(result).isEqualTo("fake-wav-bytes".getBytes());
     }
 }

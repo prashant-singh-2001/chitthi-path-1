@@ -29,23 +29,26 @@ services:
       timeout: 5s
       retries: 10
 
-  minio:
-    image: quay.io/minio/minio:RELEASE.2024-09-13T20-26-02Z
-    command: server /data --console-address ":9001"
+  # LocalStack's S3 service stands in for object storage. MinIO stopped
+  # publishing free images to both Docker Hub and quay.io in September 2026
+  # (quay.io now gates them behind paid AIStor auth), leaving no free image
+  # to run locally - ObjectStorageService talks to this the same way, since
+  # the MinIO Java client speaks the generic S3 API rather than anything
+  # MinIO-specific.
+  localstack:
+    image: localstack/localstack:3.8
     environment:
-      MINIO_ROOT_USER: chitthi
-      MINIO_ROOT_PASSWORD: chitthi123
+      SERVICES: s3
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Console
+      - "4566:4566"   # S3 API (and every other enabled service) on one edge port
     volumes:
-      - chitthi-minio-data:/data
+      - chitthi-localstack-data:/var/lib/localstack
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 5s
       timeout: 5s
       retries: 10
 
 volumes:
   chitthi-postgres-data:
-  chitthi-minio-data:
+  chitthi-localstack-data:
