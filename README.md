@@ -106,7 +106,11 @@ docker compose up -d
 
 Starts Postgres (`55432` on the host — `5432` is remapped because a
 native Postgres install already occupies it on this machine), RabbitMQ
-(`5672`, management UI on `15672`), and MinIO (`9000`, console on `9001`).
+(`5672`, management UI on `15672`), and LocalStack's S3 service (`4566`)
+standing in for object storage — MinIO's own images are no longer
+freely pullable from either Docker Hub or quay.io as of September 2026,
+so `ObjectStorageService`'s MinIO Java client points at LocalStack
+instead; it speaks the generic S3 API either way.
 
 ## Build and test
 
@@ -115,7 +119,7 @@ mvn clean verify
 ```
 
 Flyway migrates the schema on application startup. Tests use WireMock
-for Sarvam contract tests and Testcontainers for Postgres/RabbitMQ/MinIO
+for Sarvam contract tests and Testcontainers for Postgres/RabbitMQ/LocalStack
 — no real Sarvam API calls happen in the standard test suite. A tagged
 smoke test that does make one real, paid Digitise call is excluded by
 default; run it deliberately with `mvn test -Dgroups=smoke` once

@@ -38,9 +38,12 @@ spring:
           max-interval: 10s
 
 minio:
-  endpoint: http://localhost:9000
-  access-key: chitthi
-  secret-key: chitthi123
+  # Points at the LocalStack S3 service in docker-compose.yml (see there for
+  # why - MinIO's own images are no longer freely pullable). The MinIO Java
+  # client works against it unchanged, since it speaks the generic S3 API.
+  endpoint: http://localhost:4566
+  access-key: test
+  secret-key: test
   bucket: chitthi-documents
   region: us-east-1
 
