@@ -45,10 +45,15 @@ import javax.sound.sampled.AudioSystem;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
@@ -176,6 +181,54 @@ class TranslateTtsPipelineIntegrationTest {
 
         wireMockServer.verify(12, postRequestedFor(urlPathEqualTo("/translate")));
         wireMockServer.verify(24, postRequestedFor(urlPathEqualTo("/text-to-speech")));
+    }
+
+    /**
+     * The Day 7 acceptance criterion: you can watch pages move through the
+     * stages live. Opens the SSE stream right after upload and reads it with
+     * the JDK's own HTTP client - a real request, not a mocked one - so the
+     * assertion exercises {@code ProgressBroadcaster} publishing snapshots,
+     * {@code SseEmitterRegistry} delivering them, and the stream completing
+     * itself once the document reaches COMPLETE, exactly as a browser would
+     * see it.
+     */
+    @Test
+    void sseStream_deliversProgressUntilTheDocumentCompletes() throws IOException, InterruptedException {
+        stubDigitiseSubmit("_1-10.zip", "job-1-10");
+        stubDigitiseSubmit("_11-12.zip", "job-11-12");
+        stubStatusCompleted("job-1-10");
+        stubStatusCompleted("job-11-12");
+        stubDownload("job-1-10", DigitiseResultZips.perPageJson(10, i -> "Chunk text page " + i));
+        stubDownload("job-11-12", DigitiseResultZips.perPageJson(2, i -> "Second chunk page " + i));
+        stubTranslate();
+        stubTextToSpeech();
+
+        UUID documentId = uploadTwelvePagePdf();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:%d/api/documents/%s/events".formatted(port, documentId)))
+                .timeout(Duration.ofSeconds(60))
+                .GET()
+                .build();
+
+        HttpResponse<Stream<String>> response = client.send(request, HttpResponse.BodyHandlers.ofLines());
+        assertThat(response.statusCode()).isEqualTo(200);
+
+        boolean[] sawComplete = {false};
+        try (Stream<String> lines = response.body()) {
+            // The stream ends on its own once the server-side emitter
+            // completes - iterating to exhaustion is exactly the assertion
+            // that the stream closes after the terminal snapshot, not just
+            // that one arrived.
+            lines.forEach(line -> {
+                if (line.startsWith("data:") && line.contains("\"status\":\"COMPLETE\"")) {
+                    sawComplete[0] = true;
+                }
+            });
+        }
+
+        assertThat(sawComplete[0]).isTrue();
     }
 
     private void assertTrackHasExpectedFrameCount(UUID documentId, String track) throws IOException {
