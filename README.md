@@ -88,6 +88,21 @@ section for the full page state machine.
     can trigger a duplicate paid call even though the status/hash-guarded
     write keeps the stored result correct. `stage_task` keys and rate
     limiting are still Day 8–9.
+- **Day 7:** live progress and a minimal React frontend. Every stage's
+  state service (OCR, translate, TTS, assemble, and pipeline failure
+  recovery) now publishes a `DocumentProgressEvent` after it commits;
+  `GET /api/documents/{id}/events` streams it over Server-Sent Events as
+  a full `(document status, every page's status)` snapshot per message,
+  so a client that connects late or reconnects mid-pipeline is never
+  wrong, and the stream completes itself once the document reaches
+  `COMPLETE`/`PARTIAL`. A heartbeat every 15s keeps idle connections
+  alive through proxies. The `/frontend` Vite + React + TypeScript app
+  uploads a document, opens that stream to show pages advancing live,
+  and plays both audio tracks once the document finishes.
+  - `SseEmitterRegistry` tracks open connections per document in memory,
+    fine for a single instance; several instances would need a shared
+    fanout (e.g. one RabbitMQ topic per document) — noted as a
+    `TODO(scale)`.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
@@ -97,6 +112,7 @@ for what's next.
 - JDK 21+
 - Docker Desktop
 - Maven
+- Node 22+ (for the `/frontend` app)
 
 ## Run infra locally
 
@@ -124,6 +140,19 @@ for Sarvam contract tests and Testcontainers for Postgres/RabbitMQ/LocalStack
 smoke test that does make one real, paid Digitise call is excluded by
 default; run it deliberately with `mvn test -Dgroups=smoke` once
 `SARVAM_API_KEY` is set.
+
+## Run the frontend
+
+```
+cd frontend
+npm install
+npm run dev
+```
+
+The dev server proxies `/api` to `http://localhost:8080`, so run the
+Spring Boot app (`mvn spring-boot:run`, with infra up and
+`SARVAM_API_KEY` set) alongside it. See [`frontend/README.md`](frontend/README.md)
+for its own build and test commands.
 
 ## Configuration
 

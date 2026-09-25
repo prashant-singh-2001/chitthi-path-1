@@ -94,6 +94,9 @@ chitthi:
       enabled: true
   audio:
     url-ttl: 15m
+  progress:
+    emitter-timeout: 30m
+    heartbeat-interval-ms: 15000
 
 sarvam:
   base-url: https://api.sarvam.ai

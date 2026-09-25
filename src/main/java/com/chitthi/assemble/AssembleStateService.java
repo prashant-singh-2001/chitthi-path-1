@@ -6,6 +6,8 @@ import com.chitthi.document.model.Page;
 import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.progress.DocumentProgressEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,10 +27,13 @@ public class AssembleStateService {
 
     private final PageRepository pageRepository;
     private final DocumentRepository documentRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public AssembleStateService(PageRepository pageRepository, DocumentRepository documentRepository) {
+    public AssembleStateService(PageRepository pageRepository, DocumentRepository documentRepository,
+                                 ApplicationEventPublisher eventPublisher) {
         this.pageRepository = pageRepository;
         this.documentRepository = documentRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -45,5 +50,7 @@ public class AssembleStateService {
                 .orElseThrow(() -> new IllegalStateException("Document not found: " + documentId));
         document.setStatus(anyPageFailed ? DocumentStatus.PARTIAL : DocumentStatus.COMPLETE);
         documentRepository.save(document);
+
+        eventPublisher.publishEvent(new DocumentProgressEvent(documentId));
     }
 }

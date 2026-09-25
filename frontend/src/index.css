@@ -1,0 +1,96 @@
+:root {
+  color-scheme: light dark;
+  font: 16px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+h1 {
+  font-size: 28px;
+  margin: 0 0 24px;
+}
+
+h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+h3 {
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+
+form,
+section {
+  margin-bottom: 32px;
+}
+
+label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+label input,
+label select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  box-sizing: border-box;
+}
+
+button {
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.error {
+  color: #c0392b;
+}
+
+.notice,
+.warning {
+  color: #8a6d1a;
+  font-size: 14px;
+}
+
+.status {
+  font-weight: 600;
+}
+
+.page-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.page-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #e5e4e7;
+}
+
+.page-failed {
+  color: #c0392b;
+}
+
+.failed-badge {
+  font-weight: 600;
+}
+
+.audio-track {
+  margin-bottom: 16px;
+}
+
+.audio-track audio {
+  width: 100%;
+}

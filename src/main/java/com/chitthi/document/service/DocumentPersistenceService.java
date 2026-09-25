@@ -9,6 +9,7 @@ import com.chitthi.ocr.event.OcrBatchCreatedEvent;
 import com.chitthi.ocr.model.OcrBatch;
 import com.chitthi.ocr.repository.OcrBatchRepository;
 import com.chitthi.ocr.service.OcrBatchPlanner;
+import com.chitthi.progress.DocumentProgressEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -81,5 +82,6 @@ public class DocumentPersistenceService {
             eventPublisher.publishEvent(new OcrBatchCreatedEvent(
                     batch.getId(), document.getId(), document.getLanguage(), batch.getPageRange()));
         }
+        eventPublisher.publishEvent(new DocumentProgressEvent(document.getId()));
     }
 }

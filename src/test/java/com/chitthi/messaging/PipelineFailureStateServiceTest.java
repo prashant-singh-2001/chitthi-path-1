@@ -3,7 +3,9 @@ package com.chitthi.messaging;
 import com.chitthi.document.model.Page;
 import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.progress.DocumentProgressEvent;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -17,7 +19,9 @@ import static org.mockito.Mockito.when;
 class PipelineFailureStateServiceTest {
 
     private final PageRepository pageRepository = mock(PageRepository.class);
-    private final PipelineFailureStateService stateService = new PipelineFailureStateService(pageRepository);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final PipelineFailureStateService stateService =
+            new PipelineFailureStateService(pageRepository, eventPublisher);
 
     @Test
     void marksThePageFailedAndReturnsItsDocumentId() {
@@ -30,6 +34,7 @@ class PipelineFailureStateServiceTest {
 
         assertThat(result).contains(documentId);
         assertThat(page.getStatus()).isEqualTo(PageStatus.FAILED);
+        verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 
     @Test
@@ -43,6 +48,7 @@ class PipelineFailureStateServiceTest {
 
         assertThat(page.getStatus()).isEqualTo(PageStatus.INDEXED);
         verify(pageRepository, never()).save(page);
+        verify(eventPublisher, never()).publishEvent(new DocumentProgressEvent(documentId));
     }
 
     @Test

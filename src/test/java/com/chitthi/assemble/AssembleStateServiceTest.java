@@ -6,7 +6,9 @@ import com.chitthi.document.model.Page;
 import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.progress.DocumentProgressEvent;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Optional;
@@ -14,13 +16,16 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AssembleStateServiceTest {
 
     private final PageRepository pageRepository = mock(PageRepository.class);
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
-    private final AssembleStateService stateService = new AssembleStateService(pageRepository, documentRepository);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final AssembleStateService stateService =
+            new AssembleStateService(pageRepository, documentRepository, eventPublisher);
 
     @Test
     void promotesAudioDonePagesToIndexedAndCompletesTheDocumentWhenNoneFailed() {
@@ -38,6 +43,7 @@ class AssembleStateServiceTest {
         assertThat(audioDone.getStatus()).isEqualTo(PageStatus.INDEXED);
         assertThat(alreadyIndexed.getStatus()).isEqualTo(PageStatus.INDEXED);
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.COMPLETE);
+        verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 
     @Test

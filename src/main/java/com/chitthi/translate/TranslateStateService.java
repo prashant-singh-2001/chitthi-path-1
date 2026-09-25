@@ -1,6 +1,7 @@
 package com.chitthi.translate;
 
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.progress.DocumentProgressEvent;
 import com.chitthi.translate.event.PageTranslatedEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -32,10 +33,11 @@ public class TranslateStateService {
      *         moved it on, in which case this translation is discarded.
      */
     @Transactional
-    public boolean markTranslated(UUID pageId, String translatedText, String textHash) {
+    public boolean markTranslated(UUID pageId, UUID documentId, String translatedText, String textHash) {
         int updated = pageRepository.markTranslated(pageId, translatedText, textHash);
         if (updated > 0) {
             eventPublisher.publishEvent(new PageTranslatedEvent(pageId));
+            eventPublisher.publishEvent(new DocumentProgressEvent(documentId));
         }
         return updated > 0;
     }

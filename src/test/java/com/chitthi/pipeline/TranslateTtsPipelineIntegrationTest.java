@@ -45,10 +45,15 @@ import javax.sound.sampled.AudioSystem;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
@@ -178,6 +183,56 @@ class TranslateTtsPipelineIntegrationTest {
         wireMockServer.verify(24, postRequestedFor(urlPathEqualTo("/text-to-speech")));
     }
 
+    /**
+     * The Day 7 acceptance criterion: you can watch pages move through the
+     * stages live. Opens the SSE stream right after upload and reads it with
+     * the JDK's own HTTP client - a real request, not a mocked one - so the
+     * assertion exercises {@code ProgressBroadcaster} publishing snapshots,
+     * {@code SseEmitterRegistry} delivering them, and the stream completing
+     * itself once the document reaches COMPLETE, exactly as a browser would
+     * see it.
+     *
+     * <p>Deliberately a single page, not the 12-page document above: this
+     * test proves the streaming mechanism, not the Day 5-6 pipeline itself,
+     * and running the full 12-page pipeline twice in one test class pushed a
+     * CI runner into resource pressure that crashed its Postgres container.
+     */
+    @Test
+    void sseStream_deliversProgressUntilTheDocumentCompletes() throws IOException, InterruptedException {
+        stubDigitiseSubmit("_1-1.zip", "job-1-1");
+        stubStatusCompleted("job-1-1");
+        stubDownload("job-1-1", DigitiseResultZips.perPageJson(1, i -> "Only page text"));
+        stubTranslate();
+        stubTextToSpeech();
+
+        UUID documentId = uploadOnePagePdf();
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:%d/api/documents/%s/events".formatted(port, documentId)))
+                .timeout(Duration.ofSeconds(60))
+                .GET()
+                .build();
+
+        HttpResponse<Stream<String>> response = client.send(request, HttpResponse.BodyHandlers.ofLines());
+        assertThat(response.statusCode()).isEqualTo(200);
+
+        boolean[] sawComplete = {false};
+        try (Stream<String> lines = response.body()) {
+            // The stream ends on its own once the server-side emitter
+            // completes - iterating to exhaustion is exactly the assertion
+            // that the stream closes after the terminal snapshot, not just
+            // that one arrived.
+            lines.forEach(line -> {
+                if (line.startsWith("data:") && line.contains("\"status\":\"COMPLETE\"")) {
+                    sawComplete[0] = true;
+                }
+            });
+        }
+
+        assertThat(sawComplete[0]).isTrue();
+    }
+
     private void assertTrackHasExpectedFrameCount(UUID documentId, String track) throws IOException {
         byte[] trackWav = storageService.getObject("documents/%s/audio/%s.wav".formatted(documentId, track));
         try {
@@ -198,7 +253,15 @@ class TranslateTtsPipelineIntegrationTest {
     }
 
     private UUID uploadTwelvePagePdf() throws IOException {
-        byte[] pdf = buildBlankPdf(12);
+        return uploadPdf(12);
+    }
+
+    private UUID uploadOnePagePdf() throws IOException {
+        return uploadPdf(1);
+    }
+
+    private UUID uploadPdf(int pageCount) throws IOException {
+        byte[] pdf = buildBlankPdf(pageCount);
 
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("files", new ByteArrayResource(pdf) {
