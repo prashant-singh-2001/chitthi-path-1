@@ -7,6 +7,8 @@ import com.chitthi.ocr.model.OcrBatch;
 import com.chitthi.ocr.model.PageRange;
 import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.dto.DigitiseJobResponse;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -81,6 +83,15 @@ public class OcrWorker {
             OffsetDateTime nextPollAt = OffsetDateTime.now().plus(ocrProperties.poll().initialDelay());
             stateService.recordJobId(message.batchId(), response.jobId(), nextPollAt);
             log.info("Submitted OCR batch {} as Sarvam job {}", message.batchId(), response.jobId());
+        } catch (RequestNotPermitted | CallNotPermittedException e) {
+            // The rate limiter or circuit breaker turned this away before
+            // Sarvam was ever called - nothing paid happened, so the claim
+            // is released rather than counted as a failed attempt, and the
+            // message is rethrown for redelivery rather than treated as a
+            // real failure (see PipelineMessageRecoverer's pause handling).
+            log.warn("Submit for OCR batch {} was paused by resilience limits; releasing claim", message.batchId(), e);
+            stateService.releaseClaim(message.batchId());
+            throw e;
         } catch (RuntimeException e) {
             log.error("Failed to submit OCR batch {}", message.batchId(), e);
             stateService.recordSubmitFailure(message.batchId(), e.getMessage());

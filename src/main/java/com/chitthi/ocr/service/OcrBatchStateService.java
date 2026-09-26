@@ -126,6 +126,18 @@ public class OcrBatchStateService {
         ocrBatchRepository.findById(batchId).ifPresent(batch -> batch.setLastError(truncate(errorMessage)));
     }
 
+    /**
+     * Called instead of {@link #recordSubmitFailure} when the rate limiter or
+     * circuit breaker turned the submit away before Sarvam was ever called -
+     * see {@link OcrWorker}. Undoes the claim so the batch is picked up again
+     * without having spent one of its submit attempts on a call that never
+     * happened.
+     */
+    @Transactional
+    public void releaseClaim(UUID batchId) {
+        ocrBatchRepository.releaseClaim(batchId);
+    }
+
     private String truncate(String message) {
         if (message == null) {
             return null;

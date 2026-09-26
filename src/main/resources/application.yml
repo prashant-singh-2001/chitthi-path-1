@@ -101,8 +101,16 @@ chitthi:
 sarvam:
   base-url: https://api.sarvam.ai
   api-subscription-key: ${SARVAM_API_KEY:changeme}
+  http:
+    connect-timeout: 5s
+    # Must outlast a stage_task's lease's worst case; a call that's still
+    # running when the lease expires risks a second worker taking it over
+    # and re-calling Sarvam for work already in flight.
+    read-timeout: 60s
   rate-limits:
     vision-requests-per-minute: 10
+    translate-requests-per-minute: 60
+    tts-requests-per-minute: 60
   pipeline:
     ocr-max-pages-per-chunk: 10
     translate-max-chars-per-request: 2000

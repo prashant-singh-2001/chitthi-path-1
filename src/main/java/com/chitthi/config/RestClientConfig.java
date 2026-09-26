@@ -18,12 +18,16 @@ public class RestClientConfig {
         // against WireMock as "Received RST_STREAM: Stream cancelled").
         HttpClient httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(properties.http().connectTimeout())
                 .build();
+
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(properties.http().readTimeout());
 
         return RestClient.builder()
                 .baseUrl(properties.baseUrl())
                 .defaultHeader("api-subscription-key", properties.apiSubscriptionKey())
-                .requestFactory(new JdkClientHttpRequestFactory(httpClient))
+                .requestFactory(requestFactory)
                 .build();
     }
 
@@ -35,13 +39,17 @@ public class RestClientConfig {
      * the {@code api-subscription-key} header to that third-party host.
      */
     @Bean
-    public RestClient sarvamDownloadRestClient() {
+    public RestClient sarvamDownloadRestClient(SarvamProperties properties) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(properties.http().connectTimeout())
                 .build();
 
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(properties.http().readTimeout());
+
         return RestClient.builder()
-                .requestFactory(new JdkClientHttpRequestFactory(httpClient))
+                .requestFactory(requestFactory)
                 .build();
     }
 }

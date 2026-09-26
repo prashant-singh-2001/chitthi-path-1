@@ -17,7 +17,8 @@ class OcrBatchPlannerTest {
     // chunk size 10, matching sarvam.pipeline.ocr-max-pages-per-chunk in application.yml
     private final SarvamProperties sarvamProperties = new SarvamProperties(
             "https://api.sarvam.ai", "test-key",
-            new SarvamProperties.RateLimits(10),
+            new SarvamProperties.Http(java.time.Duration.ofSeconds(5), java.time.Duration.ofSeconds(60)),
+            new SarvamProperties.RateLimits(10, 60, 60),
             new SarvamProperties.Pipeline(10, 2000, 2500, 5),
             new SarvamProperties.Translate("sarvam-translate:v1"),
             new SarvamProperties.Tts("bulbul:v3", "shubh", 22050));

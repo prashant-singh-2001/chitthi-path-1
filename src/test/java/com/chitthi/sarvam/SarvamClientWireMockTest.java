@@ -50,11 +50,12 @@ class SarvamClientWireMockTest {
                 .build();
         SarvamProperties properties = new SarvamProperties(
                 wireMockServer.baseUrl(), "test-key",
-                new SarvamProperties.RateLimits(10),
+                new SarvamProperties.Http(java.time.Duration.ofSeconds(5), java.time.Duration.ofSeconds(60)),
+            new SarvamProperties.RateLimits(10, 60, 60),
                 new SarvamProperties.Pipeline(10, 2000, 2500, 5),
                 new SarvamProperties.Translate("sarvam-translate:v1"),
                 new SarvamProperties.Tts("bulbul:v3", "shubh", 22050));
-        sarvamClient = new SarvamClient(restClient, downloadRestClient, properties);
+        sarvamClient = new SarvamClient(restClient, downloadRestClient, properties, new com.chitthi.sarvam.SarvamResilience(properties));
     }
 
     @AfterEach
@@ -150,5 +151,43 @@ class SarvamClientWireMockTest {
         byte[] result = sarvamClient.synthesize("hello", "en-IN");
 
         assertThat(result).isEqualTo("fake-wav-bytes".getBytes());
+    }
+
+    @Test
+    void translate_retriesA429UsingRetryAfterAndSucceedsOnTheNextAttempt() {
+        String scenario = "translate-429-then-ok";
+        wireMockServer.stubFor(post(urlPathMatching("/translate"))
+                .inScenario(scenario)
+                .whenScenarioStateIs(com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED)
+                .willReturn(aResponse()
+                        .withStatus(429)
+                        .withHeader("Retry-After", "1"))
+                .willSetStateTo("retried"));
+        wireMockServer.stubFor(post(urlPathMatching("/translate"))
+                .inScenario(scenario)
+                .whenScenarioStateIs("retried")
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"translated_text\": \"hello\"}")));
+
+        String result = sarvamClient.translate("नमस्ते", "hi-IN", "en-IN");
+
+        assertThat(result).isEqualTo("hello");
+        wireMockServer.verify(2, com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor(urlPathMatching("/translate")));
+    }
+
+    @Test
+    void translate_givesUpAfterExhaustingRetriesOnRepeated429s() {
+        wireMockServer.stubFor(post(urlPathMatching("/translate"))
+                .willReturn(aResponse()
+                        .withStatus(429)
+                        .withHeader("Retry-After", "0")));
+
+        org.junit.jupiter.api.Assertions.assertThrows(SarvamRateLimitedException.class,
+                () -> sarvamClient.translate("नमस्ते", "hi-IN", "en-IN"));
+
+        // maxAttempts(4) in SarvamResilience: the original call plus 3 retries.
+        wireMockServer.verify(4, com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor(urlPathMatching("/translate")));
     }
 }
