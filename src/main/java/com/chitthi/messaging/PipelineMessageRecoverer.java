@@ -1,13 +1,11 @@
 package com.chitthi.messaging;
 
-import com.chitthi.assemble.message.AssembleMessage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.Message;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.retry.MessageRecoverer;
 import org.springframework.stereotype.Component;
 
@@ -27,9 +25,10 @@ import java.util.UUID;
  * (batchId/documentId/pageRange, no pageId) is left with its prior handling -
  * this recoverer only reads the field, and does nothing extra when it is
  * absent. A page whose message did carry one is marked FAILED and an assemble
- * check is queued, so the document doesn't stay stuck waiting on a page that
- * will never finish. Either way, the message is finally rejected to its
- * dead-letter queue rather than silently acknowledged.
+ * check is enqueued through the outbox (see {@link PipelineFailureStateService}),
+ * so the document doesn't stay stuck waiting on a page that will never
+ * finish. Either way, the message is finally rejected to its dead-letter
+ * queue rather than silently acknowledged.
  */
 @Component
 public class PipelineMessageRecoverer implements MessageRecoverer {
@@ -38,22 +37,17 @@ public class PipelineMessageRecoverer implements MessageRecoverer {
 
     private final ObjectMapper objectMapper;
     private final PipelineFailureStateService failureStateService;
-    private final RabbitTemplate rabbitTemplate;
 
-    public PipelineMessageRecoverer(ObjectMapper objectMapper, PipelineFailureStateService failureStateService,
-                                     RabbitTemplate rabbitTemplate) {
+    public PipelineMessageRecoverer(ObjectMapper objectMapper, PipelineFailureStateService failureStateService) {
         this.objectMapper = objectMapper;
         this.failureStateService = failureStateService;
-        this.rabbitTemplate = rabbitTemplate;
     }
 
     @Override
     public void recover(Message message, Throwable cause) {
         Optional<UUID> pageId = extractPageId(message);
         if (pageId.isPresent()) {
-            Optional<UUID> documentId = failureStateService.markPageFailed(pageId.get());
-            documentId.ifPresent(id -> rabbitTemplate.convertAndSend(
-                    PipelineQueues.EXCHANGE, PipelineQueues.ASSEMBLE_QUEUE, new AssembleMessage(id)));
+            failureStateService.markPageFailed(pageId.get());
             log.error("Page {} exhausted retries; marked FAILED", pageId.get(), cause);
         } else {
             log.error("Message exhausted retries with no pageId to act on; rejecting to its dead-letter queue", cause);

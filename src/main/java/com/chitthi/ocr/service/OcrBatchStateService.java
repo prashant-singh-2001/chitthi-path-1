@@ -29,11 +29,14 @@ public class OcrBatchStateService {
     private final DocumentRepository documentRepository;
     private final OcrPollSchedule pollSchedule;
 
+    private final com.chitthi.messaging.outbox.OutboxService outboxService;
+
     public OcrBatchStateService(OcrBatchRepository ocrBatchRepository, DocumentRepository documentRepository,
-                                 OcrPollSchedule pollSchedule) {
+                                 OcrPollSchedule pollSchedule, com.chitthi.messaging.outbox.OutboxService outboxService) {
         this.ocrBatchRepository = ocrBatchRepository;
         this.documentRepository = documentRepository;
         this.pollSchedule = pollSchedule;
+        this.outboxService = outboxService;
     }
 
     /** A batch selected for a status poll, carrying just enough to make the call without a second query. */
@@ -91,8 +94,15 @@ public class OcrBatchStateService {
         for (OcrBatch batch : stalled) {
             batch.setStatus(OcrBatchStatus.PENDING);
             batch.setNextPollAt(lease);
-            claimed.add(new ClaimedForRedispatch(batch.getId(), batch.getDocumentId(),
-                    languageByDocumentId.get(batch.getDocumentId()), batch.getPageRange()));
+            String language = languageByDocumentId.get(batch.getDocumentId());
+            // Enqueued here, inside this same transaction, rather than by
+            // the caller after this method returns: the claim and the
+            // republish must commit together, or a crash between them would
+            // leave the batch PENDING with a fresh lease but nothing ever
+            // arriving on ocr.queue to act on it.
+            outboxService.enqueue(com.chitthi.messaging.PipelineQueues.OCR_QUEUE, new com.chitthi.ocr.message.OcrBatchMessage(
+                    batch.getId(), batch.getDocumentId(), language, batch.getPageRange()));
+            claimed.add(new ClaimedForRedispatch(batch.getId(), batch.getDocumentId(), language, batch.getPageRange()));
         }
         return claimed;
     }

@@ -5,16 +5,15 @@ import com.chitthi.document.model.DocumentStatus;
 import com.chitthi.document.model.Page;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
-import com.chitthi.ocr.event.OcrBatchCreatedEvent;
+import com.chitthi.messaging.PipelineQueues;
+import com.chitthi.messaging.outbox.OutboxService;
+import com.chitthi.ocr.message.OcrBatchMessage;
 import com.chitthi.ocr.model.OcrBatch;
 import com.chitthi.ocr.repository.OcrBatchRepository;
 import com.chitthi.ocr.service.OcrBatchPlanner;
 import com.chitthi.progress.DocumentProgressEvent;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -29,32 +28,32 @@ import java.util.List;
  * transaction. Routing the call through a different bean is the
  * straightforward way to avoid that pitfall.
  *
- * <p>Each batch's {@link OcrBatchCreatedEvent} is published from inside this
- * transaction, but {@code com.chitthi.ocr.service.OcrDispatcher} only sends
- * it to the OCR queue after this transaction commits ({@code
- * @TransactionalEventListener(phase = AFTER_COMMIT)}), so a rolled-back
- * upload never queues work for pages that don't exist.
+ * <p>Each batch's {@link OcrBatchMessage} is enqueued via {@link OutboxService}
+ * from inside this same transaction, so it only reaches {@code ocr.queue}
+ * once this transaction actually commits, and a crash between commit and
+ * publish can never strand it - see {@link com.chitthi.messaging.outbox.OutboxRelay}.
  */
 @Service
 public class DocumentPersistenceService {
-
-    private static final Logger log = LoggerFactory.getLogger(DocumentPersistenceService.class);
 
     private final DocumentRepository documentRepository;
     private final PageRepository pageRepository;
     private final OcrBatchRepository ocrBatchRepository;
     private final OcrBatchPlanner ocrBatchPlanner;
+    private final OutboxService outboxService;
     private final ApplicationEventPublisher eventPublisher;
 
     public DocumentPersistenceService(DocumentRepository documentRepository,
                                        PageRepository pageRepository,
                                        OcrBatchRepository ocrBatchRepository,
                                        OcrBatchPlanner ocrBatchPlanner,
+                                       OutboxService outboxService,
                                        ApplicationEventPublisher eventPublisher) {
         this.documentRepository = documentRepository;
         this.pageRepository = pageRepository;
         this.ocrBatchRepository = ocrBatchRepository;
         this.ocrBatchPlanner = ocrBatchPlanner;
+        this.outboxService = outboxService;
         this.eventPublisher = eventPublisher;
     }
 
@@ -68,18 +67,8 @@ public class DocumentPersistenceService {
         document.setStatus(DocumentStatus.PROCESSING);
         documentRepository.save(document);
 
-        // @TransactionalEventListener silently discards an event raised with
-        // no active transaction (fallbackExecution defaults to false). This
-        // method's own @Transactional guarantees one today; the check exists
-        // so a future refactor that drops it fails loudly here instead of
-        // OcrDispatcher never firing and OCR work quietly never starting.
-        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
-            log.warn("persistPages running without an active transaction; "
-                    + "OcrBatchCreatedEvent for document {} will not be delivered", document.getId());
-        }
-
         for (OcrBatch batch : batches) {
-            eventPublisher.publishEvent(new OcrBatchCreatedEvent(
+            outboxService.enqueue(PipelineQueues.OCR_QUEUE, new OcrBatchMessage(
                     batch.getId(), document.getId(), document.getLanguage(), batch.getPageRange()));
         }
         eventPublisher.publishEvent(new DocumentProgressEvent(document.getId()));

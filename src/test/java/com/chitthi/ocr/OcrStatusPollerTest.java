@@ -1,7 +1,5 @@
 package com.chitthi.ocr;
 
-import com.chitthi.messaging.PipelineQueues;
-import com.chitthi.ocr.message.OcrBatchMessage;
 import com.chitthi.ocr.result.DigitiseResultParser;
 import com.chitthi.ocr.result.ParsedPage;
 import com.chitthi.ocr.service.OcrBatchStateService;
@@ -13,7 +11,6 @@ import com.chitthi.sarvam.dto.DownloadUrlResponse;
 import com.chitthi.sarvam.dto.JobStatus;
 import com.chitthi.sarvam.dto.JobStatusResponse;
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import java.time.Duration;
 import java.util.List;
@@ -42,7 +39,6 @@ class OcrStatusPollerTest {
     private final OcrPollSchedule pollSchedule = mock(OcrPollSchedule.class);
     private final SarvamClient sarvamClient = mock(SarvamClient.class);
     private final DigitiseResultParser resultParser = mock(DigitiseResultParser.class);
-    private final RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
     private final OcrProperties ocrProperties = new OcrProperties(
             new OcrProperties.Worker(true, 2, 4),
             new OcrProperties.Poller(true, 20),
@@ -52,7 +48,7 @@ class OcrStatusPollerTest {
             new OcrProperties.Result(33_554_432L, List.of("markdown")));
 
     private final OcrStatusPoller poller = new OcrStatusPoller(
-            stateService, resultApplier, pollSchedule, sarvamClient, resultParser, rabbitTemplate, ocrProperties);
+            stateService, resultApplier, pollSchedule, sarvamClient, resultParser, ocrProperties);
 
     @Test
     void pollDueJobs_appliesResultWhenSarvamReportsCompleted() {
@@ -127,14 +123,16 @@ class OcrStatusPollerTest {
     }
 
     @Test
-    void redispatchStalledBatches_republishesOneMessagePerStalledBatch() {
+    void redispatchStalledBatches_claimsStalledBatchesFromTheStateService() {
+        // The republish itself now happens inside OcrBatchStateService's own
+        // transaction (see OcrBatchStateServiceTest) - this poller only needs
+        // to drive the claim and not blow up when batches come back.
         var claimed = new OcrBatchStateService.ClaimedForRedispatch(
                 UUID.randomUUID(), UUID.randomUUID(), "hi", "1-10");
         when(stateService.claimStalledForRedispatch(anyInt(), anyInt(), any())).thenReturn(List.of(claimed));
 
         poller.redispatchStalledBatches();
 
-        verify(rabbitTemplate).convertAndSend(eq(PipelineQueues.EXCHANGE), eq(PipelineQueues.OCR_QUEUE),
-                eq(new OcrBatchMessage(claimed.batchId(), claimed.documentId(), "hi", "1-10")));
+        verify(stateService).claimStalledForRedispatch(anyInt(), anyInt(), any());
     }
 }

@@ -1,8 +1,6 @@
 package com.chitthi.ocr.service;
 
-import com.chitthi.messaging.PipelineQueues;
 import com.chitthi.ocr.OcrProperties;
-import com.chitthi.ocr.message.OcrBatchMessage;
 import com.chitthi.ocr.result.DigitiseResultParser;
 import com.chitthi.ocr.result.ParsedPage;
 import com.chitthi.sarvam.SarvamClient;
@@ -11,7 +9,6 @@ import com.chitthi.sarvam.dto.JobStatusResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -43,19 +40,16 @@ public class OcrStatusPoller {
     private final OcrPollSchedule pollSchedule;
     private final SarvamClient sarvamClient;
     private final DigitiseResultParser resultParser;
-    private final RabbitTemplate rabbitTemplate;
     private final OcrProperties ocrProperties;
 
     public OcrStatusPoller(OcrBatchStateService stateService, OcrResultApplier resultApplier,
                             OcrPollSchedule pollSchedule, SarvamClient sarvamClient,
-                            DigitiseResultParser resultParser, RabbitTemplate rabbitTemplate,
-                            OcrProperties ocrProperties) {
+                            DigitiseResultParser resultParser, OcrProperties ocrProperties) {
         this.stateService = stateService;
         this.resultApplier = resultApplier;
         this.pollSchedule = pollSchedule;
         this.sarvamClient = sarvamClient;
         this.resultParser = resultParser;
-        this.rabbitTemplate = rabbitTemplate;
         this.ocrProperties = ocrProperties;
     }
 
@@ -118,11 +112,13 @@ public class OcrStatusPoller {
 
     /**
      * Rescues a batch whose {@code sarvam_job_id} is still null past its
-     * dispatch lease - either the after-commit publish never arrived, or a
-     * worker claimed it and then failed to submit (see {@link OcrWorker}).
-     * Resetting to PENDING and republishing is the whole recovery: the next
-     * delivery to {@code ocr.queue} re-runs {@link OcrWorker} exactly as if
-     * this were the first attempt.
+     * dispatch lease - either the outbox publish never arrived, or a worker
+     * claimed it and then failed to submit (see {@link OcrWorker}). Resetting
+     * to PENDING and republishing is the whole recovery: the next delivery to
+     * {@code ocr.queue} re-runs {@link OcrWorker} exactly as if this were the
+     * first attempt. The republish itself happens inside
+     * {@link OcrBatchStateService#claimStalledForRedispatch}, in the same
+     * transaction as the claim.
      */
     public void redispatchStalledBatches() {
         List<OcrBatchStateService.ClaimedForRedispatch> stalled = stateService.claimStalledForRedispatch(
@@ -131,8 +127,6 @@ public class OcrStatusPoller {
         for (OcrBatchStateService.ClaimedForRedispatch batch : stalled) {
             log.warn("Redispatching stalled batch {} for document {} (pages {})",
                     batch.batchId(), batch.documentId(), batch.pageRange());
-            rabbitTemplate.convertAndSend(PipelineQueues.EXCHANGE, PipelineQueues.OCR_QUEUE,
-                    new OcrBatchMessage(batch.batchId(), batch.documentId(), batch.language(), batch.pageRange()));
         }
     }
 }

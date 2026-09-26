@@ -1,19 +1,17 @@
 package com.chitthi.messaging;
 
-import com.chitthi.assemble.message.AssembleMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -23,22 +21,19 @@ class PipelineMessageRecovererTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PipelineFailureStateService failureStateService = mock(PipelineFailureStateService.class);
-    private final RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
     private final PipelineMessageRecoverer recoverer =
-            new PipelineMessageRecoverer(objectMapper, failureStateService, rabbitTemplate);
+            new PipelineMessageRecoverer(objectMapper, failureStateService);
 
     @Test
-    void aMessageWithAPageIdMarksThatPageFailedAndQueuesAnAssembleCheck() {
+    void aMessageWithAPageIdMarksThatPageFailed() {
         UUID pageId = UUID.randomUUID();
-        UUID documentId = UUID.randomUUID();
-        when(failureStateService.markPageFailed(pageId)).thenReturn(Optional.of(documentId));
+        when(failureStateService.markPageFailed(pageId)).thenReturn(Optional.of(UUID.randomUUID()));
         Message message = jsonMessage("{\"pageId\": \"" + pageId + "\"}");
 
         assertThatThrownBy(() -> recoverer.recover(message, new RuntimeException("boom")))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
 
-        verify(rabbitTemplate).convertAndSend(
-                eq(PipelineQueues.EXCHANGE), eq(PipelineQueues.ASSEMBLE_QUEUE), eq(new AssembleMessage(documentId)));
+        verify(failureStateService).markPageFailed(pageId);
     }
 
     @Test
@@ -50,14 +45,11 @@ class PipelineMessageRecovererTest {
         assertThatThrownBy(() -> recoverer.recover(message, new RuntimeException("boom")))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
 
-        verify(failureStateService, never()).markPageFailed(org.mockito.ArgumentMatchers.any());
-        verify(rabbitTemplate, never()).convertAndSend(
-                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.any(Object.class));
+        verify(failureStateService, never()).markPageFailed(any());
     }
 
     @Test
-    void aPageThatNoLongerExistsQueuesNoAssembleCheckButStillRejects() {
+    void aPageThatNoLongerExistsStillRejects() {
         UUID pageId = UUID.randomUUID();
         when(failureStateService.markPageFailed(pageId)).thenReturn(Optional.empty());
         Message message = jsonMessage("{\"pageId\": \"" + pageId + "\"}");
@@ -65,9 +57,7 @@ class PipelineMessageRecovererTest {
         assertThatThrownBy(() -> recoverer.recover(message, new RuntimeException("boom")))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
 
-        verify(rabbitTemplate, never()).convertAndSend(
-                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.any(Object.class));
+        verify(failureStateService).markPageFailed(pageId);
     }
 
     private Message jsonMessage(String json) {

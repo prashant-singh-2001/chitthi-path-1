@@ -28,6 +28,10 @@ spring:
     port: 5672
     username: chitthi
     password: chitthi
+    # Required for RabbitTemplate#invoke + waitForConfirmsOrDie, which
+    # OutboxRelay uses to only mark a row published once the broker has
+    # actually accepted it.
+    publisher-confirm-type: simple
     listener:
       simple:
         retry:
@@ -97,6 +101,12 @@ chitthi:
   progress:
     emitter-timeout: 30m
     heartbeat-interval-ms: 15000
+  outbox:
+    # Frequent enough that SSE/UI latency isn't dominated by the relay -
+    # publishing is local (broker on the same network) and cheap.
+    relay-interval-ms: 200
+    batch-size: 50
+    purge-after-days: 7
 
 sarvam:
   base-url: https://api.sarvam.ai

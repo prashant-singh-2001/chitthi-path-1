@@ -7,13 +7,15 @@ import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
 import com.chitthi.document.service.TextHasher;
-import com.chitthi.ocr.event.PageOcrCompletedEvent;
+import com.chitthi.messaging.PipelineQueues;
+import com.chitthi.messaging.outbox.OutboxService;
 import com.chitthi.ocr.model.OcrBatch;
 import com.chitthi.ocr.model.OcrBatchStatus;
 import com.chitthi.ocr.model.PageRange;
 import com.chitthi.ocr.repository.OcrBatchRepository;
 import com.chitthi.ocr.result.ParsedPage;
 import com.chitthi.progress.DocumentProgressEvent;
+import com.chitthi.translate.message.TranslateMessage;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,13 +37,16 @@ public class OcrResultApplier {
     private final PageRepository pageRepository;
     private final OcrBatchRepository ocrBatchRepository;
     private final DocumentRepository documentRepository;
+    private final OutboxService outboxService;
     private final ApplicationEventPublisher eventPublisher;
 
     public OcrResultApplier(PageRepository pageRepository, OcrBatchRepository ocrBatchRepository,
-                             DocumentRepository documentRepository, ApplicationEventPublisher eventPublisher) {
+                             DocumentRepository documentRepository, OutboxService outboxService,
+                             ApplicationEventPublisher eventPublisher) {
         this.pageRepository = pageRepository;
         this.ocrBatchRepository = ocrBatchRepository;
         this.documentRepository = documentRepository;
+        this.outboxService = outboxService;
         this.eventPublisher = eventPublisher;
     }
 
@@ -72,7 +77,7 @@ public class OcrResultApplier {
                 page.setOriginalText(text);
                 page.setTextHash(TextHasher.sha256Hex(text));
                 page.setStatus(PageStatus.OCR_DONE);
-                eventPublisher.publishEvent(new PageOcrCompletedEvent(page.getId()));
+                outboxService.enqueue(PipelineQueues.TRANSLATE_QUEUE, new TranslateMessage(page.getId()));
             } else {
                 page.setStatus(PageStatus.FAILED);
                 everyPageRecovered = false;
