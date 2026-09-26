@@ -180,7 +180,12 @@ class TranslateTtsPipelineIntegrationTest {
         assertAudioEndpointWorks(documentId, "en", false);
 
         wireMockServer.verify(12, postRequestedFor(urlPathEqualTo("/translate")));
-        wireMockServer.verify(24, postRequestedFor(urlPathEqualTo("/text-to-speech")));
+        // 12 for the orig track (every page's original text is distinct) plus
+        // 1 for the en track: every page translates to the same stubbed
+        // TRANSLATED_TEXT, so Day 10's owner-scoped TTS cache (same owner,
+        // same voice, same text) collapses what would otherwise be 12 calls
+        // into 1 - proving FR13 end to end, not just in isolation.
+        wireMockServer.verify(13, postRequestedFor(urlPathEqualTo("/text-to-speech")));
     }
 
     /**
