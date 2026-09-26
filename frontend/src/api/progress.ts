@@ -42,3 +42,13 @@ export function percentComplete(pages: { status: string }[]): number {
 export function isTerminalDocumentStatus(status: string): boolean {
   return status === 'COMPLETE' || status === 'PARTIAL'
 }
+
+/**
+ * FR8: a page can be edited once the pipeline has actually produced text for
+ * it (anything past PENDING - including FAILED, which is the recovery path
+ * for a page OCR never finished) and the document has settled, so an edit
+ * isn't racing an in-flight translate/TTS run for the same page.
+ */
+export function canEditPage(documentStatus: string, pageStatus: string): boolean {
+  return isTerminalDocumentStatus(documentStatus) && pageStatus !== 'PENDING'
+}

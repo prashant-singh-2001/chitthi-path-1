@@ -15,6 +15,8 @@ public interface PageRepository extends JpaRepository<Page, UUID> {
 
     List<Page> findByDocumentIdAndPageNoBetweenOrderByPageNo(UUID documentId, int firstPage, int lastPage);
 
+    java.util.Optional<Page> findByDocumentIdAndPageNo(UUID documentId, int pageNo);
+
     /**
      * The translate stage's compare-and-set: only a page still OCR_DONE with
      * the exact text it was loaded with is updated. The text-hash guard stops

@@ -5,14 +5,18 @@ import com.chitthi.document.model.Document;
 import com.chitthi.document.model.DocumentStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.document.model.Page;
 import com.chitthi.document.service.DocumentNotFoundException;
 import com.chitthi.document.service.DocumentRetryService;
 import com.chitthi.document.service.DocumentUploadService;
+import com.chitthi.document.service.PageEditService;
 import com.chitthi.progress.ProgressProperties;
 import com.chitthi.progress.ProgressSnapshot;
 import com.chitthi.progress.ProgressSnapshotService;
 import com.chitthi.progress.SseEmitterRegistry;
 import com.chitthi.storage.ObjectStorageService;
+import com.chitthi.usage.UsageQueryService;
+import com.chitthi.usage.web.DocumentUsageView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -21,6 +25,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -55,6 +61,8 @@ public class DocumentController {
     private final ProgressSnapshotService snapshotService;
     private final ProgressProperties progressProperties;
     private final DocumentRetryService retryService;
+    private final PageEditService pageEditService;
+    private final UsageQueryService usageQueryService;
 
     public DocumentController(DocumentUploadService uploadService,
                                DocumentRepository documentRepository,
@@ -64,7 +72,9 @@ public class DocumentController {
                                SseEmitterRegistry emitterRegistry,
                                ProgressSnapshotService snapshotService,
                                ProgressProperties progressProperties,
-                               DocumentRetryService retryService) {
+                               DocumentRetryService retryService,
+                               PageEditService pageEditService,
+                               UsageQueryService usageQueryService) {
         this.uploadService = uploadService;
         this.documentRepository = documentRepository;
         this.pageRepository = pageRepository;
@@ -74,6 +84,8 @@ public class DocumentController {
         this.snapshotService = snapshotService;
         this.progressProperties = progressProperties;
         this.retryService = retryService;
+        this.pageEditService = pageEditService;
+        this.usageQueryService = usageQueryService;
     }
 
     @PostMapping
@@ -158,5 +170,22 @@ public class DocumentController {
     public ResponseEntity<RetryResponse> retry(@PathVariable UUID id) {
         DocumentRetryService.RetryResult result = retryService.retryFailedPages(id);
         return ResponseEntity.accepted().body(new RetryResponse(result.requeued(), result.skipped()));
+    }
+
+    /** FR8: edits a page's text, invalidating only that page's translation and audio. See {@link PageEditService}. */
+    @PutMapping("/{id}/pages/{pageNo}/text")
+    public ResponseEntity<PageView> editPageText(@PathVariable("id") UUID id, @PathVariable int pageNo,
+                                                  @RequestBody PageTextEditRequest request) {
+        Page page = pageEditService.editText(id, pageNo, request.text());
+        return ResponseEntity.accepted().body(PageView.from(page));
+    }
+
+    /** FR10: per-document cost and latency, broken down by Sarvam endpoint. See {@link UsageQueryService}. */
+    @GetMapping("/{id}/usage")
+    public DocumentUsageView usage(@PathVariable UUID id) {
+        if (!documentRepository.existsById(id)) {
+            throw new DocumentNotFoundException(id);
+        }
+        return usageQueryService.documentUsage(id);
     }
 }

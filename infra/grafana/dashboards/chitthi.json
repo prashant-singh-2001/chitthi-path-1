@@ -1,0 +1,87 @@
+{
+  "title": "Chitthi",
+  "uid": "chitthi",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Sarvam calls per minute (by endpoint, outcome)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (endpoint, outcome) (rate(chitthi_sarvam_calls_total[1m])) * 60",
+          "legendFormat": "{{endpoint}} - {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Sarvam latency p95 (by endpoint)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "chitthi_sarvam_latency_seconds{quantile=\"0.95\"}",
+          "legendFormat": "{{endpoint}} p95"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Estimated spend (INR)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (chitthi_sarvam_cost_inr_total)",
+          "legendFormat": "{{endpoint}} cumulative"
+        },
+        {
+          "expr": "sum by (endpoint) (rate(chitthi_sarvam_cost_inr_total[1h])) * 3600",
+          "legendFormat": "{{endpoint}} per hour"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Units consumed (pages, characters)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (unit_type) (rate(chitthi_sarvam_units_total[5m])) * 60",
+          "legendFormat": "{{unit_type}} / min"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "/api/search latency p95",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "http_server_requests_seconds{uri=\"/api/search\", quantile=\"0.95\"}",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Outbox backlog (unpublished rows)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "chitthi_outbox_unpublished",
+          "legendFormat": "unpublished"
+        }
+      ]
+    }
+  ]
+}

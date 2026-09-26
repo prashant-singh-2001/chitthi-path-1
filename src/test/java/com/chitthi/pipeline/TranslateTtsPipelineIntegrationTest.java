@@ -180,7 +180,16 @@ class TranslateTtsPipelineIntegrationTest {
         assertAudioEndpointWorks(documentId, "en", false);
 
         wireMockServer.verify(12, postRequestedFor(urlPathEqualTo("/translate")));
-        wireMockServer.verify(24, postRequestedFor(urlPathEqualTo("/text-to-speech")));
+        // Every page translates to the same stubbed TRANSLATED_TEXT, so Day
+        // 10's owner-scoped TTS cache (same owner, same voice, same text)
+        // collapses the en track's 12 pages into 1 real Sarvam call - FR13
+        // demonstrated end to end, not just in isolation. (The orig track's
+        // call count isn't asserted here: it depends on how many of the 12
+        // pages' distinct source texts happen to land in the same or
+        // different chunks, which isn't this test's concern.)
+        wireMockServer.verify(1, postRequestedFor(urlPathEqualTo("/text-to-speech"))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath(
+                        "$.language_code", com.github.tomakehurst.wiremock.client.WireMock.equalTo("en-IN"))));
     }
 
     /**
@@ -202,7 +211,14 @@ class TranslateTtsPipelineIntegrationTest {
         stubDigitiseSubmit("_1-1.zip", "job-1-1");
         stubStatusCompleted("job-1-1");
         stubDownload("job-1-1", DigitiseResultZips.perPageJson(1, i -> "Only page text"));
-        stubTranslate();
+        // Distinct translated text from the 12-page test above: both
+        // documents share the same default owner, and Day 10's TTS cache is
+        // owner-scoped, not page-scoped - stubTranslate()'s shared
+        // TRANSLATED_TEXT would let this page's en track resolve from the
+        // other test's already-DONE stage_task row instead of making its own
+        // call, which the SSE assertion below depends on seeing.
+        wireMockServer.stubFor(post(urlPathEqualTo("/translate"))
+                .willReturn(okJson("{\"translated_text\": \"SSE-TEST-TRANSLATED\"}")));
         stubTextToSpeech();
 
         UUID documentId = uploadOnePagePdf();

@@ -12,9 +12,12 @@ import com.chitthi.pipeline.idempotency.StageTaskService;
 import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.SarvamLanguage;
 import com.chitthi.sarvam.SarvamProperties;
+import com.chitthi.sarvam.SarvamResilience;
 import com.chitthi.storage.ObjectStorageService;
 import com.chitthi.text.SentenceChunker;
 import com.chitthi.tts.message.TtsMessage;
+import com.chitthi.usage.UnitType;
+import com.chitthi.usage.UsageMeter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -32,11 +35,13 @@ import java.util.Optional;
  * every Sarvam call and MinIO write happens outside a transaction.
  *
  * <p>Each chunk's synthesis goes through {@link StageTaskService}, keyed by
- * {@link IdempotencyKeys#forTtsChunk}. The stored "result" is the chunk's
- * object storage key, not the audio itself - synthesis still happens (and is
- * still guarded from running twice) before the key is recorded DONE, and a
- * chunk already DONE is fetched back from storage instead of re-synthesized.
- * This is also the shape FR13's TTS cache will reuse.
+ * {@link IdempotencyKeys#forTtsAudio} - owner-scoped, not page-scoped, so two
+ * pages (even across two documents) asking for the same text in the same
+ * voice share one cached result (FR13). The stored "result" is the cached
+ * audio's object storage key ({@code tts-cache/{ownerId}/{contentHash}.wav}),
+ * not the audio itself: synthesis still happens (and is still guarded from
+ * running twice) before the key is recorded DONE, and a chunk already DONE
+ * is fetched back from storage instead of re-synthesized.
  */
 @Component
 public class TtsWorker {
@@ -54,11 +59,12 @@ public class TtsWorker {
     private final ObjectStorageService storageService;
     private final TtsStateService stateService;
     private final StageTaskService stageTaskService;
+    private final UsageMeter usageMeter;
 
     public TtsWorker(PageRepository pageRepository, DocumentRepository documentRepository,
                       SarvamClient sarvamClient, SarvamProperties sarvamProperties,
                       ObjectStorageService storageService, TtsStateService stateService,
-                      StageTaskService stageTaskService) {
+                      StageTaskService stageTaskService, UsageMeter usageMeter) {
         this.pageRepository = pageRepository;
         this.documentRepository = documentRepository;
         this.sarvamClient = sarvamClient;
@@ -66,6 +72,7 @@ public class TtsWorker {
         this.storageService = storageService;
         this.stateService = stateService;
         this.stageTaskService = stageTaskService;
+        this.usageMeter = usageMeter;
     }
 
     @RabbitListener(queues = PipelineQueues.TTS_QUEUE, containerFactory = "pipelineListenerContainerFactory",
@@ -89,11 +96,11 @@ public class TtsWorker {
         Document document = documentRepository.findById(page.getDocumentId())
                 .orElseThrow(() -> new IllegalStateException("Document not found: " + page.getDocumentId()));
 
-        synthesizeTrack(page, ENGLISH_TRACK, page.getTranslatedText(), ENGLISH_LANGUAGE);
+        synthesizeTrack(page, document, ENGLISH_TRACK, page.getTranslatedText(), ENGLISH_LANGUAGE);
 
         String sourceLanguage = document.getLanguage();
         if (!SarvamLanguage.isEnglish(sourceLanguage) && SarvamLanguage.supportsTts(sourceLanguage)) {
-            synthesizeTrack(page, ORIGINAL_TRACK, page.getOriginalText(), SarvamLanguage.normalize(sourceLanguage));
+            synthesizeTrack(page, document, ORIGINAL_TRACK, page.getOriginalText(), SarvamLanguage.normalize(sourceLanguage));
         }
 
         boolean applied = stateService.markAudioDone(page.getId(), page.getDocumentId());
@@ -102,18 +109,21 @@ public class TtsWorker {
         }
     }
 
-    private void synthesizeTrack(Page page, String track, String text, String languageCode) {
+    private void synthesizeTrack(Page page, Document document, String track, String text, String languageCode) {
         List<String> chunks = SentenceChunker.chunk(text, sarvamProperties.pipeline().ttsMaxCharsPerRequest());
         List<byte[]> chunkWavs = new ArrayList<>(chunks.size());
-        for (int i = 0; i < chunks.size(); i++) {
-            String chunk = chunks.get(i);
-            String chunkKey = "documents/%s/audio/chunks/%s/%s/%03d.wav"
-                    .formatted(page.getDocumentId(), page.getId(), track, i);
-            String idempotencyKey = IdempotencyKeys.forTtsChunk(page.getId(), track, i, chunk);
+        for (String chunk : chunks) {
+            String contentHash = IdempotencyKeys.ttsContentHash(languageCode, sarvamProperties.tts().speaker(),
+                    sarvamProperties.tts().model(), sarvamProperties.tts().sampleRate(), chunk);
+            String idempotencyKey = IdempotencyKeys.forTtsAudio(document.getOwnerId(), languageCode,
+                    sarvamProperties.tts().speaker(), sarvamProperties.tts().model(),
+                    sarvamProperties.tts().sampleRate(), chunk);
+            String cacheKey = "tts-cache/%s/%s.wav".formatted(document.getOwnerId(), contentHash);
             String resultKey = stageTaskService.callOnce(idempotencyKey, page.getId(), STAGE, () -> {
-                byte[] audio = sarvamClient.synthesize(chunk, languageCode);
-                storageService.putObject(chunkKey, audio, "audio/wav");
-                return chunkKey;
+                byte[] audio = usageMeter.meter(page.getDocumentId(), SarvamResilience.TTS, chunk.length(),
+                        UnitType.CHARACTERS, () -> sarvamClient.synthesize(chunk, languageCode));
+                storageService.putObject(cacheKey, audio, "audio/wav");
+                return cacheKey;
             });
             chunkWavs.add(storageService.getObject(resultKey));
         }

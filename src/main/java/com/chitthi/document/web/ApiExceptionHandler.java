@@ -1,8 +1,12 @@
 package com.chitthi.document.web;
 
 import com.chitthi.document.service.DocumentNotFoundException;
+import com.chitthi.document.service.InvalidPageTextException;
+import com.chitthi.document.service.PageNotFoundException;
+import com.chitthi.document.service.PageNotReadyException;
 import com.chitthi.document.service.PageSplitException;
 import com.chitthi.document.service.UploadValidationException;
+import com.chitthi.search.InvalidSearchQueryException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -35,8 +39,23 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(new ErrorResponse("Could not process the uploaded file: " + e.getMessage()));
     }
 
-    @ExceptionHandler(DocumentNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(DocumentNotFoundException e) {
+    @ExceptionHandler({DocumentNotFoundException.class, PageNotFoundException.class})
+    public ResponseEntity<ErrorResponse> handleNotFound(RuntimeException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidPageTextException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPageText(InvalidPageTextException e) {
+        return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+    }
+
+    @ExceptionHandler(PageNotReadyException.class)
+    public ResponseEntity<ErrorResponse> handlePageNotReady(PageNotReadyException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidSearchQueryException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidSearchQuery(InvalidSearchQueryException e) {
+        return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
     }
 }

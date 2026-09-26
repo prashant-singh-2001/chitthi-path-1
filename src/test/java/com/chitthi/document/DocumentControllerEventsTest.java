@@ -35,9 +35,11 @@ class DocumentControllerEventsTest {
     private final ProgressSnapshotService snapshotService = mock(ProgressSnapshotService.class);
     private final ProgressProperties progressProperties = new ProgressProperties(Duration.ofMinutes(30), 15000);
     private final com.chitthi.document.service.DocumentRetryService retryService = mock(com.chitthi.document.service.DocumentRetryService.class);
+    private final com.chitthi.document.service.PageEditService pageEditService = mock(com.chitthi.document.service.PageEditService.class);
+    private final com.chitthi.usage.UsageQueryService usageQueryService = mock(com.chitthi.usage.UsageQueryService.class);
     private final DocumentController controller = new DocumentController(
             uploadService, documentRepository, pageRepository, storageService, audioProperties,
-            emitterRegistry, snapshotService, progressProperties, retryService);
+            emitterRegistry, snapshotService, progressProperties, retryService, pageEditService, usageQueryService);
 
     @Test
     void throws404WhenTheDocumentDoesNotExist() {

@@ -120,10 +120,10 @@ section for the full page state machine.
     `OutboxRelay` every 200ms — closing the crash-between-commit-and-publish
     gap those dispatchers always had.
   - Every translate and TTS chunk's Sarvam call is guarded by a
-    `stage_task` row keyed on `pageId:STAGE:track:chunkIndex:contentHash`
-    (`StageTaskService`): a redelivered message reuses a DONE row's result
-    with no second call, and a row still RUNNING under a live lease is
-    left alone rather than called again.
+    `stage_task` row (`StageTaskService`): a redelivered message reuses a
+    DONE row's result with no second call, and a row still RUNNING under a
+    live lease is left alone rather than called again. (Translate keys are
+    page-scoped; Day 10 makes TTS keys owner-scoped instead — see below.)
   - A failing message goes through up to two delayed retry tiers
     (`chitthi.retry.delays`, default 5s/30s) before it's dead-lettered —
     one retry queue per (destination queue, delay), each declared with an
@@ -142,6 +142,61 @@ section for the full page state machine.
     wired per process), so instead upload a document, kill the app
     mid-TTS, and restart it — the `stage_task` rows show one DONE row per
     chunk and the document still reaches `COMPLETE`.
+- **Day 10:** an edit flow with partial regeneration, and a TTS cache by
+  text hash — editing page 3 re-runs only page 3.
+  - `PUT /api/documents/{id}/pages/{pageNo}/text` (FR8) resets a page to
+    `OCR_DONE` with the new text and re-queues translation for that page
+    alone; everything downstream re-runs through the ordinary pipeline.
+    Saving the exact same text is a no-op. A `FAILED` page with no
+    recovered OCR text can still be edited — typing the text in by hand is
+    that page's recovery path, filling the gap Day 8–9's manual retry
+    can't close for an OCR-stage failure. A still-`PENDING` page is
+    rejected with 409.
+  - `IdempotencyKeys.forTtsAudio` (FR13) re-scopes the TTS `stage_task` key
+    from per-page to per-owner: two pages — even across two documents —
+    that ask for the same text in the same voice for the same owner share
+    one cached result, and the cached audio itself moves to a
+    content-addressed key (`tts-cache/{ownerId}/{contentHash}.wav`).
+    That also fixed a latent bug: the old *positional* chunk key
+    (`.../chunks/{pageId}/{track}/{idx}.wav`) meant an edit's new audio
+    would silently overwrite the file an older, still-cached call pointed
+    at — reverting an edit would then get the new audio back from a false
+    cache hit.
+  - The `/frontend` app gets an "Edit text" button per page once a
+    document is terminal; saving reopens the SSE stream (which had closed
+    itself) so the page watches its own regeneration live, exactly as the
+    first pass looked.
+  - `EditFlowIntegrationTest` is the milestone: editing page 3 makes
+    exactly one new translate call and two new TTS calls, all for page
+    3's text, while pages 1 and 2 go untouched; reverting page 3 to its
+    original text costs zero new calls of either kind, since Day 8–9's
+    `stage_task` rows from the first pass already answer both.
+- **Day 11 (part 1 of 2):** search, a usage ledger and a Grafana dashboard
+  — search under 300ms, cost per document visible. (Sign-in and the daily
+  word cap are part 2, a separate stacked PR.)
+  - `UsageMeter` (FR10) wraps every real Sarvam call — never a
+    `stage_task`/TTS-cache hit, since that never reaches the network — and
+    records it in the existing `api_call` table with an estimated cost
+    (config-driven per-unit prices from the requirements doc's cost
+    section) plus Micrometer metrics. `GET /api/documents/{id}/usage` and
+    `GET /api/usage` read it back.
+  - `GET /api/search?q=&tag=&year=` (FR9) matches a page two ways in one
+    query: `translated_tsv @@ websearch_to_tsquery` against the existing
+    generated tsvector, or `original_text ILIKE` against the existing
+    `pg_trgm` trigram index — Postgres has no stemming for Indic scripts,
+    so substring matching is what "search" means for the original script.
+  - Prometheus and Grafana join `docker compose up -d`, provisioned with a
+    dashboard showing Sarvam call rate, latency and spend per endpoint,
+    units consumed, search latency, and the outbox's unpublished-row
+    backlog.
+  - The `/frontend` app gets a search box and a per-document "Estimated
+    cost" line.
+  - `SearchIntegrationTest` seeds 1,000 pages and asserts p95 search
+    latency under 300ms; `UsageLedgerIntegrationTest` checks exact ledger
+    row counts and costs for a real pipeline run.
+  - Found along the way: `ts_headline`'s snippet is the user's own
+    uploaded text, unescaped — rendering it as HTML client-side would have
+    been a stored-XSS vector. Snippets are plain text end to end instead.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
@@ -165,7 +220,20 @@ native Postgres install already occupies it on this machine), RabbitMQ
 standing in for object storage — MinIO's own images are no longer
 freely pullable from either Docker Hub or quay.io as of September 2026,
 so `ObjectStorageService`'s MinIO Java client points at LocalStack
-instead; it speaks the generic S3 API either way.
+instead; it speaks the generic S3 API either way. It also starts
+Prometheus (`9090`) and Grafana (`3000`) — see below.
+
+## Run the dashboard
+
+`docker compose up -d` also starts Prometheus and Grafana, provisioned
+from `infra/`. Prometheus scrapes the app's `/actuator/prometheus`
+endpoint (`infra/prometheus/prometheus.yml`), so run the app itself
+outside Docker (`mvn spring-boot:run`) alongside the compose stack.
+
+Open `http://localhost:3000` (anonymous viewer access, no login needed)
+— the "Chitthi" dashboard is provisioned automatically, showing Sarvam
+call rate, latency and estimated spend per endpoint, units consumed,
+`/api/search` latency, and the outbox's unpublished-row backlog.
 
 ## Build and test
 

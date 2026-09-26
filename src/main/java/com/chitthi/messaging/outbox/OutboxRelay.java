@@ -1,6 +1,8 @@
 package com.chitthi.messaging.outbox;
 
 import com.chitthi.messaging.PipelineQueues;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -40,12 +42,18 @@ public class OutboxRelay {
     private final int purgeAfterDays;
 
     public OutboxRelay(OutboxRepository outboxRepository, RabbitTemplate rabbitTemplate,
+                        MeterRegistry meterRegistry,
                         @Value("${chitthi.outbox.batch-size:50}") int batchSize,
                         @Value("${chitthi.outbox.purge-after-days:7}") int purgeAfterDays) {
         this.outboxRepository = outboxRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.batchSize = batchSize;
         this.purgeAfterDays = purgeAfterDays;
+        // A steadily growing count means the relay is falling behind - a
+        // Grafana panel Day 11 adds alongside the Sarvam spend/latency ones.
+        Gauge.builder("chitthi.outbox.unpublished", outboxRepository, OutboxRepository::countByPublishedAtIsNull)
+                .description("Outbox rows not yet relayed to RabbitMQ")
+                .register(meterRegistry);
     }
 
     @Scheduled(fixedDelayString = "${chitthi.outbox.relay-interval-ms:200}")

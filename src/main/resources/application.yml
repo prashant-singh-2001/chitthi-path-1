@@ -115,6 +115,14 @@ chitthi:
   retry:
     # Two delayed retries plus the first attempt = 3 total, per FR7.
     delays: [5s, 30s]
+  usage:
+    pricing:
+      # Estimates from the requirements doc's "Approximate cost per 10-page
+      # letter" section, not Sarvam's actual billed rate (not published per
+      # unit). FR10 only needs a number visible per document, not an exact one.
+      vision-per-page: 0.50
+      translate-per-char: 0.002
+      tts-per-char: 0.003
 
 sarvam:
   base-url: https://api.sarvam.ai
@@ -146,6 +154,15 @@ management:
     web:
       exposure:
         include: health, info, prometheus, metrics
+  metrics:
+    distribution:
+      percentiles:
+        # p50/p95 for the Grafana dashboard's Sarvam-latency and
+        # search-latency panels. Named per meter (not global), so this
+        # doesn't add percentile computation overhead to every timer in the
+        # app - only the ones the dashboard actually reads.
+        chitthi.sarvam.latency: 0.5, 0.95
+        http.server.requests: 0.5, 0.95
 
 logging:
   pattern:

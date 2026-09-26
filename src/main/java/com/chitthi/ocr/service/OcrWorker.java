@@ -6,7 +6,10 @@ import com.chitthi.ocr.message.OcrBatchMessage;
 import com.chitthi.ocr.model.OcrBatch;
 import com.chitthi.ocr.model.PageRange;
 import com.chitthi.sarvam.SarvamClient;
+import com.chitthi.sarvam.SarvamResilience;
 import com.chitthi.sarvam.dto.DigitiseJobResponse;
+import com.chitthi.usage.UnitType;
+import com.chitthi.usage.UsageMeter;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import org.slf4j.Logger;
@@ -39,15 +42,18 @@ public class OcrWorker {
     private final OcrPayloadPackager payloadPackager;
     private final SarvamClient sarvamClient;
     private final OcrProperties ocrProperties;
+    private final UsageMeter usageMeter;
 
     public OcrWorker(OcrBatchStateService stateService,
                       OcrPayloadPackager payloadPackager,
                       SarvamClient sarvamClient,
-                      OcrProperties ocrProperties) {
+                      OcrProperties ocrProperties,
+                      UsageMeter usageMeter) {
         this.stateService = stateService;
         this.payloadPackager = payloadPackager;
         this.sarvamClient = sarvamClient;
         this.ocrProperties = ocrProperties;
+        this.usageMeter = usageMeter;
     }
 
     @RabbitListener(queues = PipelineQueues.OCR_QUEUE, autoStartup = "${chitthi.ocr.worker.enabled:true}")
@@ -78,8 +84,9 @@ public class OcrWorker {
         PageRange range = PageRange.parse(message.pageRange());
         try {
             OcrPayload payload = payloadPackager.pack(message.documentId(), range);
-            DigitiseJobResponse response = sarvamClient.submitDigitiseJob(
-                    payload.content(), payload.filename(), message.language());
+            DigitiseJobResponse response = usageMeter.meter(message.documentId(), SarvamResilience.VISION_SUBMIT,
+                    range.size(), UnitType.PAGES,
+                    () -> sarvamClient.submitDigitiseJob(payload.content(), payload.filename(), message.language()));
             OffsetDateTime nextPollAt = OffsetDateTime.now().plus(ocrProperties.poll().initialDelay());
             stateService.recordJobId(message.batchId(), response.jobId(), nextPollAt);
             log.info("Submitted OCR batch {} as Sarvam job {}", message.batchId(), response.jobId());

@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: chitthi
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # The app runs outside Docker (mvn spring-boot:run), so Prometheus
+      # reaches it through the host - see docker-compose.yml's extra_hosts
+      # entry for the Linux case.
+      - targets: ["host.docker.internal:8080"]
