@@ -11,8 +11,11 @@ import com.chitthi.pipeline.idempotency.StageTaskService;
 import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.SarvamLanguage;
 import com.chitthi.sarvam.SarvamProperties;
+import com.chitthi.sarvam.SarvamResilience;
 import com.chitthi.text.SentenceChunker;
 import com.chitthi.translate.message.TranslateMessage;
+import com.chitthi.usage.UnitType;
+import com.chitthi.usage.UsageMeter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -49,16 +52,19 @@ public class TranslateWorker {
     private final SarvamProperties sarvamProperties;
     private final TranslateStateService stateService;
     private final StageTaskService stageTaskService;
+    private final UsageMeter usageMeter;
 
     public TranslateWorker(PageRepository pageRepository, DocumentRepository documentRepository,
                             SarvamClient sarvamClient, SarvamProperties sarvamProperties,
-                            TranslateStateService stateService, StageTaskService stageTaskService) {
+                            TranslateStateService stateService, StageTaskService stageTaskService,
+                            UsageMeter usageMeter) {
         this.pageRepository = pageRepository;
         this.documentRepository = documentRepository;
         this.sarvamClient = sarvamClient;
         this.sarvamProperties = sarvamProperties;
         this.stateService = stateService;
         this.stageTaskService = stageTaskService;
+        this.usageMeter = usageMeter;
     }
 
     @RabbitListener(queues = PipelineQueues.TRANSLATE_QUEUE, containerFactory = "pipelineListenerContainerFactory",
@@ -85,7 +91,7 @@ public class TranslateWorker {
         String originalText = page.getOriginalText();
         String translatedText = SarvamLanguage.isEnglish(document.getLanguage())
                 ? originalText
-                : translate(originalText, document.getLanguage(), page.getId());
+                : translate(originalText, document.getLanguage(), page.getId(), page.getDocumentId());
 
         boolean applied = stateService.markTranslated(page.getId(), page.getDocumentId(), translatedText, page.getTextHash());
         if (!applied) {
@@ -93,7 +99,7 @@ public class TranslateWorker {
         }
     }
 
-    private String translate(String text, String sourceLanguage, UUID pageId) {
+    private String translate(String text, String sourceLanguage, UUID pageId, UUID documentId) {
         String normalizedSource = SarvamLanguage.normalize(sourceLanguage);
         List<String> chunks = SentenceChunker.chunk(text, sarvamProperties.pipeline().translateMaxCharsPerRequest());
         StringBuilder result = new StringBuilder();
@@ -101,7 +107,8 @@ public class TranslateWorker {
             String chunk = chunks.get(i);
             String key = IdempotencyKeys.forTranslateChunk(pageId, i, chunk);
             String translatedChunk = stageTaskService.callOnce(key, pageId, STAGE,
-                    () -> sarvamClient.translate(chunk, normalizedSource, ENGLISH_TARGET));
+                    () -> usageMeter.meter(documentId, SarvamResilience.TRANSLATE, chunk.length(), UnitType.CHARACTERS,
+                            () -> sarvamClient.translate(chunk, normalizedSource, ENGLISH_TARGET)));
             if (!result.isEmpty()) {
                 result.append(' ');
             }

@@ -10,6 +10,7 @@ import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.SarvamProperties;
 import com.chitthi.storage.ObjectStorageService;
 import com.chitthi.tts.message.TtsMessage;
+import com.chitthi.usage.UsageMeter;
 import org.junit.jupiter.api.Test;
 
 import javax.sound.sampled.AudioFileFormat;
@@ -48,14 +49,19 @@ class TtsWorkerTest {
     private final ObjectStorageService storageService = mock(ObjectStorageService.class);
     private final TtsStateService stateService = mock(TtsStateService.class);
     private final StageTaskService stageTaskService = mock(StageTaskService.class);
+    private final UsageMeter usageMeter = mock(UsageMeter.class);
     private final TtsWorker worker = new TtsWorker(
-            pageRepository, documentRepository, sarvamClient, sarvamProperties, storageService, stateService, stageTaskService);
+            pageRepository, documentRepository, sarvamClient, sarvamProperties, storageService, stateService,
+            stageTaskService, usageMeter);
 
     {
-        // The idempotency guard is exercised in StageTaskServiceTest; here it
-        // just runs the call straight through, so these tests keep asserting
-        // on SarvamClient/ObjectStorageService the way they did before
-        // stage_task existed.
+        // The idempotency guard is exercised in StageTaskServiceTest, and the
+        // usage ledger in UsageMeterTest; here they just run the call
+        // straight through, so these tests keep asserting on
+        // SarvamClient/ObjectStorageService the way they did before either
+        // existed.
+        when(usageMeter.meter(any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any(), any()))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(4)).get());
         when(stageTaskService.callOnce(anyString(), any(), anyString(), any()))
                 .thenAnswer(invocation -> ((Supplier<String>) invocation.getArgument(3)).get());
         when(storageService.getObject(anyString())).thenReturn(generateWav());
@@ -104,6 +110,11 @@ class TtsWorkerTest {
                 eq("documents/%s/audio/en/003.wav".formatted(documentId)), org.mockito.ArgumentMatchers.any(), eq("audio/wav"));
         verify(storageService, never()).putObject(
                 org.mockito.ArgumentMatchers.contains("/audio/orig/"), org.mockito.ArgumentMatchers.any(), anyString());
+        // Metered once for the one real chunk call - a stage_task/TTS-cache
+        // hit (see StageTaskServiceTest and IdempotencyKeysTest) never
+        // reaches the meter at all.
+        verify(usageMeter, times(1)).meter(eq(documentId), eq(com.chitthi.sarvam.SarvamResilience.TTS),
+                org.mockito.ArgumentMatchers.anyInt(), eq(com.chitthi.usage.UnitType.CHARACTERS), any());
     }
 
     @Test

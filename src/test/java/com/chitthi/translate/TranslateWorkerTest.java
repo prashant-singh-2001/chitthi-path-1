@@ -9,6 +9,7 @@ import com.chitthi.pipeline.idempotency.StageTaskService;
 import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.SarvamProperties;
 import com.chitthi.translate.message.TranslateMessage;
+import com.chitthi.usage.UsageMeter;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -40,13 +41,18 @@ class TranslateWorkerTest {
             new SarvamProperties.Tts("bulbul:v3", "shubh", 22050));
     private final TranslateStateService stateService = mock(TranslateStateService.class);
     private final StageTaskService stageTaskService = mock(StageTaskService.class);
+    private final UsageMeter usageMeter = mock(UsageMeter.class);
     private final TranslateWorker worker = new TranslateWorker(
-            pageRepository, documentRepository, sarvamClient, sarvamProperties, stateService, stageTaskService);
+            pageRepository, documentRepository, sarvamClient, sarvamProperties, stateService, stageTaskService,
+            usageMeter);
 
     {
-        // The idempotency guard is exercised in StageTaskServiceTest; here it
-        // just runs the call straight through, so these tests keep asserting
-        // on SarvamClient the way they did before stage_task existed.
+        // The idempotency guard is exercised in StageTaskServiceTest, and the
+        // usage ledger in UsageMeterTest; here they just run the call
+        // straight through, so these tests keep asserting on SarvamClient
+        // the way they did before either existed.
+        when(usageMeter.meter(any(), anyString(), org.mockito.ArgumentMatchers.anyInt(), any(), any()))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(4)).get());
         when(stageTaskService.callOnce(anyString(), any(), anyString(), any()))
                 .thenAnswer(invocation -> ((Supplier<String>) invocation.getArgument(3)).get());
     }
@@ -114,6 +120,10 @@ class TranslateWorkerTest {
 
         verify(sarvamClient, times(2)).translate(anyString(), eq("hi-IN"), eq("en-IN"));
         verify(stateService).markTranslated(page.getId(), documentId, "translated translated", "hash2");
+        // Metered once per real chunk call - a stage_task cache hit (see
+        // StageTaskServiceTest) never reaches the meter at all.
+        verify(usageMeter, times(2)).meter(eq(documentId), eq(com.chitthi.sarvam.SarvamResilience.TRANSLATE),
+                org.mockito.ArgumentMatchers.anyInt(), eq(com.chitthi.usage.UnitType.CHARACTERS), any());
     }
 
     @Test

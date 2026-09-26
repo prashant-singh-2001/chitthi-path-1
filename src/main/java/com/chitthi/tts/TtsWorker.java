@@ -12,9 +12,12 @@ import com.chitthi.pipeline.idempotency.StageTaskService;
 import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.SarvamLanguage;
 import com.chitthi.sarvam.SarvamProperties;
+import com.chitthi.sarvam.SarvamResilience;
 import com.chitthi.storage.ObjectStorageService;
 import com.chitthi.text.SentenceChunker;
 import com.chitthi.tts.message.TtsMessage;
+import com.chitthi.usage.UnitType;
+import com.chitthi.usage.UsageMeter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -56,11 +59,12 @@ public class TtsWorker {
     private final ObjectStorageService storageService;
     private final TtsStateService stateService;
     private final StageTaskService stageTaskService;
+    private final UsageMeter usageMeter;
 
     public TtsWorker(PageRepository pageRepository, DocumentRepository documentRepository,
                       SarvamClient sarvamClient, SarvamProperties sarvamProperties,
                       ObjectStorageService storageService, TtsStateService stateService,
-                      StageTaskService stageTaskService) {
+                      StageTaskService stageTaskService, UsageMeter usageMeter) {
         this.pageRepository = pageRepository;
         this.documentRepository = documentRepository;
         this.sarvamClient = sarvamClient;
@@ -68,6 +72,7 @@ public class TtsWorker {
         this.storageService = storageService;
         this.stateService = stateService;
         this.stageTaskService = stageTaskService;
+        this.usageMeter = usageMeter;
     }
 
     @RabbitListener(queues = PipelineQueues.TTS_QUEUE, containerFactory = "pipelineListenerContainerFactory",
@@ -115,7 +120,8 @@ public class TtsWorker {
                     sarvamProperties.tts().sampleRate(), chunk);
             String cacheKey = "tts-cache/%s/%s.wav".formatted(document.getOwnerId(), contentHash);
             String resultKey = stageTaskService.callOnce(idempotencyKey, page.getId(), STAGE, () -> {
-                byte[] audio = sarvamClient.synthesize(chunk, languageCode);
+                byte[] audio = usageMeter.meter(page.getDocumentId(), SarvamResilience.TTS, chunk.length(),
+                        UnitType.CHARACTERS, () -> sarvamClient.synthesize(chunk, languageCode));
                 storageService.putObject(cacheKey, audio, "audio/wav");
                 return cacheKey;
             });
