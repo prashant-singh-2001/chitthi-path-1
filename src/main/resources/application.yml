@@ -36,10 +36,11 @@ spring:
       simple:
         retry:
           enabled: true
-          max-attempts: 3
-          initial-interval: 2s
-          multiplier: 2
-          max-interval: 10s
+          # One attempt only: PipelineMessageRecoverer runs on the very first
+          # failure and does its own tiered delayed-retry (chitthi.retry.delays)
+          # instead of Spring AMQP's in-memory backoff, which would otherwise
+          # block a consumer thread for the whole retry window.
+          max-attempts: 1
 
 minio:
   # Points at the LocalStack S3 service in docker-compose.yml (see there for
@@ -111,6 +112,9 @@ chitthi:
     # Must outlast sarvam.http.read-timeout, or a worker still genuinely
     # mid-call could have its claim taken over by a second worker.
     lease: 90s
+  retry:
+    # Two delayed retries plus the first attempt = 3 total, per FR7.
+    delays: [5s, 30s]
 
 sarvam:
   base-url: https://api.sarvam.ai

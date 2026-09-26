@@ -5,6 +5,8 @@ import com.chitthi.sarvam.SarvamProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Declarable;
+import org.springframework.amqp.core.Declarables;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
@@ -19,6 +21,10 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The pipeline's message broker topology. One topic exchange carries every
@@ -133,6 +139,39 @@ public class RabbitMqConfig {
     public Binding assembleDeadLetterBinding(Queue assembleDeadLetterQueue, DirectExchange deadLetterExchange) {
         return BindingBuilder.bind(assembleDeadLetterQueue).to(deadLetterExchange)
                 .with(PipelineQueues.ASSEMBLE_DEAD_LETTER_QUEUE);
+    }
+
+    @Bean
+    public TopicExchange retryExchange() {
+        return new TopicExchange(PipelineQueues.RETRY_EXCHANGE, true, false);
+    }
+
+    /**
+     * One passive queue per configured retry delay, with no consumer of its
+     * own - {@code x-message-ttl} is the entire mechanism. A message that
+     * expires here dead-letters to {@link PipelineQueues#EXCHANGE} using
+     * whatever routing key it was published with (no {@code
+     * dead-letter-routing-key} override), which
+     * {@link PipelineMessageRecoverer} always sets to the message's original
+     * queue name - so it lands back exactly where it started, just later.
+     *
+     * <p>Bound to {@link #retryExchange} with the wildcard pattern {@code #}:
+     * every tier queue accepts a message for any of the four pipeline
+     * queues, since which tier it goes to is decided by the delay, not the
+     * destination.
+     */
+    @Bean
+    public Declarables retryQueues(RetryProperties retryProperties, TopicExchange retryExchange) {
+        List<Declarable> declarables = new ArrayList<>();
+        for (Duration delay : retryProperties.delays()) {
+            Queue queue = QueueBuilder.durable(PipelineQueues.retryQueueName(delay))
+                    .withArgument("x-message-ttl", delay.toMillis())
+                    .deadLetterExchange(PipelineQueues.EXCHANGE)
+                    .build();
+            declarables.add(queue);
+            declarables.add(BindingBuilder.bind(queue).to(retryExchange).with("#"));
+        }
+        return new Declarables(declarables);
     }
 
     /**
