@@ -171,6 +171,32 @@ section for the full page state machine.
     3's text, while pages 1 and 2 go untouched; reverting page 3 to its
     original text costs zero new calls of either kind, since Day 8–9's
     `stage_task` rows from the first pass already answer both.
+- **Day 11 (part 1 of 2):** search, a usage ledger and a Grafana dashboard
+  — search under 300ms, cost per document visible. (Sign-in and the daily
+  word cap are part 2, a separate stacked PR.)
+  - `UsageMeter` (FR10) wraps every real Sarvam call — never a
+    `stage_task`/TTS-cache hit, since that never reaches the network — and
+    records it in the existing `api_call` table with an estimated cost
+    (config-driven per-unit prices from the requirements doc's cost
+    section) plus Micrometer metrics. `GET /api/documents/{id}/usage` and
+    `GET /api/usage` read it back.
+  - `GET /api/search?q=&tag=&year=` (FR9) matches a page two ways in one
+    query: `translated_tsv @@ websearch_to_tsquery` against the existing
+    generated tsvector, or `original_text ILIKE` against the existing
+    `pg_trgm` trigram index — Postgres has no stemming for Indic scripts,
+    so substring matching is what "search" means for the original script.
+  - Prometheus and Grafana join `docker compose up -d`, provisioned with a
+    dashboard showing Sarvam call rate, latency and spend per endpoint,
+    units consumed, search latency, and the outbox's unpublished-row
+    backlog.
+  - The `/frontend` app gets a search box and a per-document "Estimated
+    cost" line.
+  - `SearchIntegrationTest` seeds 1,000 pages and asserts p95 search
+    latency under 300ms; `UsageLedgerIntegrationTest` checks exact ledger
+    row counts and costs for a real pipeline run.
+  - Found along the way: `ts_headline`'s snippet is the user's own
+    uploaded text, unescaped — rendering it as HTML client-side would have
+    been a stored-XSS vector. Snippets are plain text end to end instead.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
