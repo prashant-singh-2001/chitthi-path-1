@@ -148,7 +148,8 @@ class TtsWorkerTest {
         worker.onMessage(new TtsMessage(pageId));
 
         verify(sarvamClient, times(1)).synthesize(anyString(), anyString());
-        verify(storageService, times(1)).putObject(
+        // One chunk write plus the concatenated page-level track write.
+        verify(storageService, times(2)).putObject(
                 org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), anyString());
     }
 
