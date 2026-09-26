@@ -5,9 +5,11 @@ import com.chitthi.document.model.Document;
 import com.chitthi.document.model.DocumentStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.document.model.Page;
 import com.chitthi.document.service.DocumentNotFoundException;
 import com.chitthi.document.service.DocumentRetryService;
 import com.chitthi.document.service.DocumentUploadService;
+import com.chitthi.document.service.PageEditService;
 import com.chitthi.progress.ProgressProperties;
 import com.chitthi.progress.ProgressSnapshot;
 import com.chitthi.progress.ProgressSnapshotService;
@@ -21,6 +23,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -55,6 +59,7 @@ public class DocumentController {
     private final ProgressSnapshotService snapshotService;
     private final ProgressProperties progressProperties;
     private final DocumentRetryService retryService;
+    private final PageEditService pageEditService;
 
     public DocumentController(DocumentUploadService uploadService,
                                DocumentRepository documentRepository,
@@ -64,7 +69,8 @@ public class DocumentController {
                                SseEmitterRegistry emitterRegistry,
                                ProgressSnapshotService snapshotService,
                                ProgressProperties progressProperties,
-                               DocumentRetryService retryService) {
+                               DocumentRetryService retryService,
+                               PageEditService pageEditService) {
         this.uploadService = uploadService;
         this.documentRepository = documentRepository;
         this.pageRepository = pageRepository;
@@ -74,6 +80,7 @@ public class DocumentController {
         this.snapshotService = snapshotService;
         this.progressProperties = progressProperties;
         this.retryService = retryService;
+        this.pageEditService = pageEditService;
     }
 
     @PostMapping
@@ -158,5 +165,13 @@ public class DocumentController {
     public ResponseEntity<RetryResponse> retry(@PathVariable UUID id) {
         DocumentRetryService.RetryResult result = retryService.retryFailedPages(id);
         return ResponseEntity.accepted().body(new RetryResponse(result.requeued(), result.skipped()));
+    }
+
+    /** FR8: edits a page's text, invalidating only that page's translation and audio. See {@link PageEditService}. */
+    @PutMapping("/{id}/pages/{pageNo}/text")
+    public ResponseEntity<PageView> editPageText(@PathVariable("id") UUID id, @PathVariable int pageNo,
+                                                  @RequestBody PageTextEditRequest request) {
+        Page page = pageEditService.editText(id, pageNo, request.text());
+        return ResponseEntity.accepted().body(PageView.from(page));
     }
 }
