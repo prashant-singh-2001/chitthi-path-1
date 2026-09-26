@@ -120,10 +120,10 @@ section for the full page state machine.
     `OutboxRelay` every 200ms — closing the crash-between-commit-and-publish
     gap those dispatchers always had.
   - Every translate and TTS chunk's Sarvam call is guarded by a
-    `stage_task` row keyed on `pageId:STAGE:track:chunkIndex:contentHash`
-    (`StageTaskService`): a redelivered message reuses a DONE row's result
-    with no second call, and a row still RUNNING under a live lease is
-    left alone rather than called again.
+    `stage_task` row (`StageTaskService`): a redelivered message reuses a
+    DONE row's result with no second call, and a row still RUNNING under a
+    live lease is left alone rather than called again. (Translate keys are
+    page-scoped; Day 10 makes TTS keys owner-scoped instead — see below.)
   - A failing message goes through up to two delayed retry tiers
     (`chitthi.retry.delays`, default 5s/30s) before it's dead-lettered —
     one retry queue per (destination queue, delay), each declared with an
@@ -142,6 +142,35 @@ section for the full page state machine.
     wired per process), so instead upload a document, kill the app
     mid-TTS, and restart it — the `stage_task` rows show one DONE row per
     chunk and the document still reaches `COMPLETE`.
+- **Day 10:** an edit flow with partial regeneration, and a TTS cache by
+  text hash — editing page 3 re-runs only page 3.
+  - `PUT /api/documents/{id}/pages/{pageNo}/text` (FR8) resets a page to
+    `OCR_DONE` with the new text and re-queues translation for that page
+    alone; everything downstream re-runs through the ordinary pipeline.
+    Saving the exact same text is a no-op. A `FAILED` page with no
+    recovered OCR text can still be edited — typing the text in by hand is
+    that page's recovery path, filling the gap Day 8–9's manual retry
+    can't close for an OCR-stage failure. A still-`PENDING` page is
+    rejected with 409.
+  - `IdempotencyKeys.forTtsAudio` (FR13) re-scopes the TTS `stage_task` key
+    from per-page to per-owner: two pages — even across two documents —
+    that ask for the same text in the same voice for the same owner share
+    one cached result, and the cached audio itself moves to a
+    content-addressed key (`tts-cache/{ownerId}/{contentHash}.wav`).
+    That also fixed a latent bug: the old *positional* chunk key
+    (`.../chunks/{pageId}/{track}/{idx}.wav`) meant an edit's new audio
+    would silently overwrite the file an older, still-cached call pointed
+    at — reverting an edit would then get the new audio back from a false
+    cache hit.
+  - The `/frontend` app gets an "Edit text" button per page once a
+    document is terminal; saving reopens the SSE stream (which had closed
+    itself) so the page watches its own regeneration live, exactly as the
+    first pass looked.
+  - `EditFlowIntegrationTest` is the milestone: editing page 3 makes
+    exactly one new translate call and two new TTS calls, all for page
+    3's text, while pages 1 and 2 go untouched; reverting page 3 to its
+    original text costs zero new calls of either kind, since Day 8–9's
+    `stage_task` rows from the first pass already answer both.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
