@@ -73,10 +73,20 @@ button {
 }
 
 .page-list li {
-  display: flex;
-  justify-content: space-between;
   padding: 6px 0;
   border-bottom: 1px solid #e5e4e7;
+}
+
+.page-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-row button {
+  padding: 4px 10px;
+  font-size: 13px;
 }
 
 .page-failed {
@@ -85,6 +95,29 @@ button {
 
 .failed-badge {
   font-weight: 600;
+}
+
+.edited-badge {
+  color: #6b7280;
+  font-weight: 400;
+  font-size: 13px;
+}
+
+.page-editor {
+  margin: 8px 0 4px;
+}
+
+.page-editor textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 8px;
+}
+
+.page-editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .audio-track {

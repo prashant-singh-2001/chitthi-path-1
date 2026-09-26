@@ -18,3 +18,23 @@ export interface AudioUrlResponse {
   expiresAt: string
   fallback: boolean
 }
+
+// Mirrors com.chitthi.document.web.PageView / DocumentView.
+export interface PageView {
+  pageNo: number
+  status: string
+  edited: boolean
+  originalText: string | null
+  translatedText: string | null
+}
+
+export interface DocumentView {
+  id: string
+  title: string
+  language: string
+  status: string
+  year: number | null
+  tags: string[]
+  createdAt: string
+  pages: PageView[]
+}

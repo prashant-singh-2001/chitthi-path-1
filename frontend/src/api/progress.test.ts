@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isFailed, isTerminalDocumentStatus, percentComplete, stageIndex } from './progress'
+import { canEditPage, isFailed, isTerminalDocumentStatus, percentComplete, stageIndex } from './progress'
 
 describe('stageIndex', () => {
   it('maps known statuses to their position on the track', () => {
@@ -54,5 +54,23 @@ describe('isTerminalDocumentStatus', () => {
   it('is false for PENDING and PROCESSING', () => {
     expect(isTerminalDocumentStatus('PENDING')).toBe(false)
     expect(isTerminalDocumentStatus('PROCESSING')).toBe(false)
+  })
+})
+
+describe('canEditPage', () => {
+  it('is false while the document is still in flight, even for an indexed page', () => {
+    expect(canEditPage('PROCESSING', 'INDEXED')).toBe(false)
+  })
+
+  it('is false for a page still pending OCR, even once the document is terminal', () => {
+    expect(canEditPage('PARTIAL', 'PENDING')).toBe(false)
+  })
+
+  it('is true for a failed page once the document is terminal - the recovery path', () => {
+    expect(canEditPage('PARTIAL', 'FAILED')).toBe(true)
+  })
+
+  it('is true for an indexed page once the document is complete', () => {
+    expect(canEditPage('COMPLETE', 'INDEXED')).toBe(true)
   })
 })
