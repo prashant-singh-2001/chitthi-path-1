@@ -31,6 +31,18 @@ public interface OcrBatchRepository extends JpaRepository<OcrBatch, UUID> {
     int claimForSubmit(@Param("id") UUID id, @Param("maxAttempts") int maxAttempts);
 
     /**
+     * Undoes {@link #claimForSubmit}'s claim when the submit never actually
+     * happened - the rate limiter or circuit breaker turned it away before
+     * the HTTP call. Decrementing {@code attempts} back out means the
+     * attempt budget only ever counts submits that were actually tried.
+     */
+    @Modifying
+    @Query("UPDATE OcrBatch b SET b.status = com.chitthi.ocr.model.OcrBatchStatus.PENDING, "
+            + "b.attempts = b.attempts - 1 "
+            + "WHERE b.id = :id AND b.status = com.chitthi.ocr.model.OcrBatchStatus.RUNNING")
+    int releaseClaim(@Param("id") UUID id);
+
+    /**
      * Locks due-for-polling batches without ever blocking on one another:
      * {@code SKIP LOCKED} means a batch another instance (or another sweep,
      * under overlap) is already holding is simply left for next time rather

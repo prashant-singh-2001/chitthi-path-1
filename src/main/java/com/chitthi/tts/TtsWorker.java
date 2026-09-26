@@ -7,6 +7,8 @@ import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
 import com.chitthi.messaging.PipelineQueues;
+import com.chitthi.pipeline.idempotency.IdempotencyKeys;
+import com.chitthi.pipeline.idempotency.StageTaskService;
 import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.SarvamLanguage;
 import com.chitthi.sarvam.SarvamProperties;
@@ -29,9 +31,12 @@ import java.util.Optional;
  * {@link TtsStateService}. Like {@link com.chitthi.translate.TranslateWorker},
  * every Sarvam call and MinIO write happens outside a transaction.
  *
- * <p>TODO(day8): same duplicate-delivery gap as {@code TranslateWorker} - a
- * redelivered message re-synthesizes audio even though the AUDIO_DONE guard
- * keeps the stored page state correct.
+ * <p>Each chunk's synthesis goes through {@link StageTaskService}, keyed by
+ * {@link IdempotencyKeys#forTtsChunk}. The stored "result" is the chunk's
+ * object storage key, not the audio itself - synthesis still happens (and is
+ * still guarded from running twice) before the key is recorded DONE, and a
+ * chunk already DONE is fetched back from storage instead of re-synthesized.
+ * This is also the shape FR13's TTS cache will reuse.
  */
 @Component
 public class TtsWorker {
@@ -40,6 +45,7 @@ public class TtsWorker {
     private static final String ENGLISH_LANGUAGE = "en-IN";
     private static final String ENGLISH_TRACK = "en";
     private static final String ORIGINAL_TRACK = "orig";
+    private static final String STAGE = "TTS";
 
     private final PageRepository pageRepository;
     private final DocumentRepository documentRepository;
@@ -47,16 +53,19 @@ public class TtsWorker {
     private final SarvamProperties sarvamProperties;
     private final ObjectStorageService storageService;
     private final TtsStateService stateService;
+    private final StageTaskService stageTaskService;
 
     public TtsWorker(PageRepository pageRepository, DocumentRepository documentRepository,
                       SarvamClient sarvamClient, SarvamProperties sarvamProperties,
-                      ObjectStorageService storageService, TtsStateService stateService) {
+                      ObjectStorageService storageService, TtsStateService stateService,
+                      StageTaskService stageTaskService) {
         this.pageRepository = pageRepository;
         this.documentRepository = documentRepository;
         this.sarvamClient = sarvamClient;
         this.sarvamProperties = sarvamProperties;
         this.storageService = storageService;
         this.stateService = stateService;
+        this.stageTaskService = stageTaskService;
     }
 
     @RabbitListener(queues = PipelineQueues.TTS_QUEUE, containerFactory = "pipelineListenerContainerFactory",
@@ -96,8 +105,17 @@ public class TtsWorker {
     private void synthesizeTrack(Page page, String track, String text, String languageCode) {
         List<String> chunks = SentenceChunker.chunk(text, sarvamProperties.pipeline().ttsMaxCharsPerRequest());
         List<byte[]> chunkWavs = new ArrayList<>(chunks.size());
-        for (String chunk : chunks) {
-            chunkWavs.add(sarvamClient.synthesize(chunk, languageCode));
+        for (int i = 0; i < chunks.size(); i++) {
+            String chunk = chunks.get(i);
+            String chunkKey = "documents/%s/audio/chunks/%s/%s/%03d.wav"
+                    .formatted(page.getDocumentId(), page.getId(), track, i);
+            String idempotencyKey = IdempotencyKeys.forTtsChunk(page.getId(), track, i, chunk);
+            String resultKey = stageTaskService.callOnce(idempotencyKey, page.getId(), STAGE, () -> {
+                byte[] audio = sarvamClient.synthesize(chunk, languageCode);
+                storageService.putObject(chunkKey, audio, "audio/wav");
+                return chunkKey;
+            });
+            chunkWavs.add(storageService.getObject(resultKey));
         }
         byte[] pageWav = WavConcatenator.concat(chunkWavs);
         String key = "documents/%s/audio/%s/%03d.wav".formatted(page.getDocumentId(), track, page.getPageNo());

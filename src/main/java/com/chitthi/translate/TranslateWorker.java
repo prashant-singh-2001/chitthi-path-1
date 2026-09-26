@@ -6,6 +6,8 @@ import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
 import com.chitthi.messaging.PipelineQueues;
+import com.chitthi.pipeline.idempotency.IdempotencyKeys;
+import com.chitthi.pipeline.idempotency.StageTaskService;
 import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.SarvamLanguage;
 import com.chitthi.sarvam.SarvamProperties;
@@ -19,40 +21,44 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Consumes {@code translate.queue}: translates a page's OCR'd text to
  * English and hands it to {@link TranslateStateService} for the guarded
- * write. Chunking and the Sarvam call happen with no transaction open -
- * Translate is an external, rate-limited call that can take seconds per
- * chunk, and a long-running transaction would starve the connection pool the
- * same way {@code DocumentUploadService} avoids for MinIO PUTs.
+ * write. Chunking happens with no transaction open - Translate is an
+ * external, rate-limited call that can take seconds per chunk, and a
+ * long-running transaction would starve the connection pool the same way
+ * {@code DocumentUploadService} avoids for MinIO PUTs.
  *
- * <p>TODO(day8): a redelivered message re-runs every Translate call even
- * though {@link TranslateStateService}'s status/hash guard keeps the stored
- * result correct - the extra spend isn't blocked until {@code stage_task}
- * idempotency keys land.
+ * <p>Each chunk's Sarvam call goes through {@link StageTaskService}, keyed by
+ * {@link IdempotencyKeys#forTranslateChunk}: a redelivered message replays
+ * every chunk's key, and any chunk already DONE returns its stored
+ * translation with no second call.
  */
 @Component
 public class TranslateWorker {
 
     private static final Logger log = LoggerFactory.getLogger(TranslateWorker.class);
     private static final String ENGLISH_TARGET = "en-IN";
+    private static final String STAGE = "TRANSLATE";
 
     private final PageRepository pageRepository;
     private final DocumentRepository documentRepository;
     private final SarvamClient sarvamClient;
     private final SarvamProperties sarvamProperties;
     private final TranslateStateService stateService;
+    private final StageTaskService stageTaskService;
 
     public TranslateWorker(PageRepository pageRepository, DocumentRepository documentRepository,
                             SarvamClient sarvamClient, SarvamProperties sarvamProperties,
-                            TranslateStateService stateService) {
+                            TranslateStateService stateService, StageTaskService stageTaskService) {
         this.pageRepository = pageRepository;
         this.documentRepository = documentRepository;
         this.sarvamClient = sarvamClient;
         this.sarvamProperties = sarvamProperties;
         this.stateService = stateService;
+        this.stageTaskService = stageTaskService;
     }
 
     @RabbitListener(queues = PipelineQueues.TRANSLATE_QUEUE, containerFactory = "pipelineListenerContainerFactory",
@@ -79,7 +85,7 @@ public class TranslateWorker {
         String originalText = page.getOriginalText();
         String translatedText = SarvamLanguage.isEnglish(document.getLanguage())
                 ? originalText
-                : translate(originalText, document.getLanguage());
+                : translate(originalText, document.getLanguage(), page.getId());
 
         boolean applied = stateService.markTranslated(page.getId(), page.getDocumentId(), translatedText, page.getTextHash());
         if (!applied) {
@@ -87,12 +93,15 @@ public class TranslateWorker {
         }
     }
 
-    private String translate(String text, String sourceLanguage) {
+    private String translate(String text, String sourceLanguage, UUID pageId) {
         String normalizedSource = SarvamLanguage.normalize(sourceLanguage);
         List<String> chunks = SentenceChunker.chunk(text, sarvamProperties.pipeline().translateMaxCharsPerRequest());
         StringBuilder result = new StringBuilder();
-        for (String chunk : chunks) {
-            String translatedChunk = sarvamClient.translate(chunk, normalizedSource, ENGLISH_TARGET);
+        for (int i = 0; i < chunks.size(); i++) {
+            String chunk = chunks.get(i);
+            String key = IdempotencyKeys.forTranslateChunk(pageId, i, chunk);
+            String translatedChunk = stageTaskService.callOnce(key, pageId, STAGE,
+                    () -> sarvamClient.translate(chunk, normalizedSource, ENGLISH_TARGET));
             if (!result.isEmpty()) {
                 result.append(' ');
             }

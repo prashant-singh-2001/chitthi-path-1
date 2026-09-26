@@ -5,6 +5,8 @@ import com.chitthi.sarvam.SarvamProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Declarable;
+import org.springframework.amqp.core.Declarables;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
@@ -19,6 +21,10 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The pipeline's message broker topology. One topic exchange carries every
@@ -133,6 +139,33 @@ public class RabbitMqConfig {
     public Binding assembleDeadLetterBinding(Queue assembleDeadLetterQueue, DirectExchange deadLetterExchange) {
         return BindingBuilder.bind(assembleDeadLetterQueue).to(deadLetterExchange)
                 .with(PipelineQueues.ASSEMBLE_DEAD_LETTER_QUEUE);
+    }
+
+    /**
+     * One passive queue per (destination queue, retry delay) pair, with no
+     * consumer of its own - {@code x-message-ttl} is the entire mechanism.
+     * {@link PipelineMessageRecoverer} publishes directly to a tier queue by
+     * name via the default exchange (every queue's implicit binding to it).
+     * A message that expires here dead-letters to
+     * {@link PipelineQueues#EXCHANGE} under the destination queue's own name
+     * - set explicitly as {@code x-dead-letter-routing-key} here, not left to
+     * whatever routing key RabbitMQ would otherwise preserve - landing back
+     * on that exact queue.
+     */
+    @Bean
+    public Declarables retryQueues(RetryProperties retryProperties) {
+        List<Declarable> declarables = new ArrayList<>();
+        for (String destinationQueue : PipelineQueues.RETRYABLE_QUEUES) {
+            for (Duration delay : retryProperties.delays()) {
+                Queue queue = QueueBuilder.durable(PipelineQueues.retryQueueName(destinationQueue, delay))
+                        .withArgument("x-message-ttl", delay.toMillis())
+                        .deadLetterExchange(PipelineQueues.EXCHANGE)
+                        .deadLetterRoutingKey(destinationQueue)
+                        .build();
+                declarables.add(queue);
+            }
+        }
+        return new Declarables(declarables);
     }
 
     /**

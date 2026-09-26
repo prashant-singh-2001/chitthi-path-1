@@ -31,9 +31,10 @@ class DocumentControllerAudioTest {
     private final SseEmitterRegistry emitterRegistry = mock(SseEmitterRegistry.class);
     private final ProgressSnapshotService snapshotService = mock(ProgressSnapshotService.class);
     private final ProgressProperties progressProperties = new ProgressProperties(Duration.ofMinutes(30), 15000);
+    private final com.chitthi.document.service.DocumentRetryService retryService = mock(com.chitthi.document.service.DocumentRetryService.class);
     private final DocumentController controller = new DocumentController(
             uploadService, documentRepository, pageRepository, storageService, audioProperties,
-            emitterRegistry, snapshotService, progressProperties);
+            emitterRegistry, snapshotService, progressProperties, retryService);
 
     @Test
     void rejectsAnUnknownLanguage() {

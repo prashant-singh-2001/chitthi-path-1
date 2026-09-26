@@ -6,7 +6,9 @@ import com.chitthi.document.model.Page;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
 import com.chitthi.document.service.DocumentPersistenceService;
-import com.chitthi.ocr.event.OcrBatchCreatedEvent;
+import com.chitthi.messaging.PipelineQueues;
+import com.chitthi.messaging.outbox.OutboxService;
+import com.chitthi.ocr.message.OcrBatchMessage;
 import com.chitthi.ocr.model.OcrBatch;
 import com.chitthi.ocr.repository.OcrBatchRepository;
 import com.chitthi.ocr.service.OcrBatchPlanner;
@@ -20,6 +22,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -31,10 +34,11 @@ class DocumentPersistenceServiceTest {
     private final PageRepository pageRepository = mock(PageRepository.class);
     private final OcrBatchRepository ocrBatchRepository = mock(OcrBatchRepository.class);
     private final OcrBatchPlanner ocrBatchPlanner = mock(OcrBatchPlanner.class);
+    private final OutboxService outboxService = mock(OutboxService.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
     private final DocumentPersistenceService persistenceService = new DocumentPersistenceService(
-            documentRepository, pageRepository, ocrBatchRepository, ocrBatchPlanner, eventPublisher);
+            documentRepository, pageRepository, ocrBatchRepository, ocrBatchPlanner, outboxService, eventPublisher);
 
     @Test
     void persistPages_savesPagesBatchesAndMarksDocumentProcessing() {
@@ -53,12 +57,12 @@ class DocumentPersistenceServiceTest {
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.PROCESSING);
         verify(documentRepository).save(document);
 
-        verify(eventPublisher, times(1)).publishEvent(any(OcrBatchCreatedEvent.class));
+        verify(outboxService, times(1)).enqueue(eq(PipelineQueues.OCR_QUEUE), any(OcrBatchMessage.class));
         verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 
     @Test
-    void persistPages_publishesOneEventPerBatch() {
+    void persistPages_enqueuesOneMessagePerBatch() {
         Document document = new Document("user", "title", "hi", null, null);
         UUID documentId = UUID.randomUUID();
         setId(document, documentId);
@@ -70,7 +74,7 @@ class DocumentPersistenceServiceTest {
 
         persistenceService.persistPages(document, pages);
 
-        verify(eventPublisher, times(2)).publishEvent(any(OcrBatchCreatedEvent.class));
+        verify(outboxService, times(2)).enqueue(eq(PipelineQueues.OCR_QUEUE), any(OcrBatchMessage.class));
     }
 
     private void setId(Document document, UUID id) {

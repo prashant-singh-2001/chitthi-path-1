@@ -6,6 +6,7 @@ import com.chitthi.document.model.DocumentStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
 import com.chitthi.document.service.DocumentNotFoundException;
+import com.chitthi.document.service.DocumentRetryService;
 import com.chitthi.document.service.DocumentUploadService;
 import com.chitthi.progress.ProgressProperties;
 import com.chitthi.progress.ProgressSnapshot;
@@ -53,6 +54,7 @@ public class DocumentController {
     private final SseEmitterRegistry emitterRegistry;
     private final ProgressSnapshotService snapshotService;
     private final ProgressProperties progressProperties;
+    private final DocumentRetryService retryService;
 
     public DocumentController(DocumentUploadService uploadService,
                                DocumentRepository documentRepository,
@@ -61,7 +63,8 @@ public class DocumentController {
                                AudioProperties audioProperties,
                                SseEmitterRegistry emitterRegistry,
                                ProgressSnapshotService snapshotService,
-                               ProgressProperties progressProperties) {
+                               ProgressProperties progressProperties,
+                               DocumentRetryService retryService) {
         this.uploadService = uploadService;
         this.documentRepository = documentRepository;
         this.pageRepository = pageRepository;
@@ -70,6 +73,7 @@ public class DocumentController {
         this.emitterRegistry = emitterRegistry;
         this.snapshotService = snapshotService;
         this.progressProperties = progressProperties;
+        this.retryService = retryService;
     }
 
     @PostMapping
@@ -147,5 +151,12 @@ public class DocumentController {
             emitter.completeWithError(e);
         }
         return emitter;
+    }
+
+    /** FR7's manual retry: re-queues every FAILED page. See {@link DocumentRetryService}. */
+    @PostMapping("/{id}/retry")
+    public ResponseEntity<RetryResponse> retry(@PathVariable UUID id) {
+        DocumentRetryService.RetryResult result = retryService.retryFailedPages(id);
+        return ResponseEntity.accepted().body(new RetryResponse(result.requeued(), result.skipped()));
     }
 }

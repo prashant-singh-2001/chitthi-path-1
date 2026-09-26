@@ -28,14 +28,19 @@ spring:
     port: 5672
     username: chitthi
     password: chitthi
+    # Required for RabbitTemplate#invoke + waitForConfirmsOrDie, which
+    # OutboxRelay uses to only mark a row published once the broker has
+    # actually accepted it.
+    publisher-confirm-type: simple
     listener:
       simple:
         retry:
           enabled: true
-          max-attempts: 3
-          initial-interval: 2s
-          multiplier: 2
-          max-interval: 10s
+          # One attempt only: PipelineMessageRecoverer runs on the very first
+          # failure and does its own tiered delayed-retry (chitthi.retry.delays)
+          # instead of Spring AMQP's in-memory backoff, which would otherwise
+          # block a consumer thread for the whole retry window.
+          max-attempts: 1
 
 minio:
   # Points at the LocalStack S3 service in docker-compose.yml (see there for
@@ -97,12 +102,33 @@ chitthi:
   progress:
     emitter-timeout: 30m
     heartbeat-interval-ms: 15000
+  outbox:
+    # Frequent enough that SSE/UI latency isn't dominated by the relay -
+    # publishing is local (broker on the same network) and cheap.
+    relay-interval-ms: 200
+    batch-size: 50
+    purge-after-days: 7
+  stage-task:
+    # Must outlast sarvam.http.read-timeout, or a worker still genuinely
+    # mid-call could have its claim taken over by a second worker.
+    lease: 90s
+  retry:
+    # Two delayed retries plus the first attempt = 3 total, per FR7.
+    delays: [5s, 30s]
 
 sarvam:
   base-url: https://api.sarvam.ai
   api-subscription-key: ${SARVAM_API_KEY:changeme}
+  http:
+    connect-timeout: 5s
+    # Must outlast a stage_task's lease's worst case; a call that's still
+    # running when the lease expires risks a second worker taking it over
+    # and re-calling Sarvam for work already in flight.
+    read-timeout: 60s
   rate-limits:
     vision-requests-per-minute: 10
+    translate-requests-per-minute: 60
+    tts-requests-per-minute: 60
   pipeline:
     ocr-max-pages-per-chunk: 10
     translate-max-chars-per-request: 2000

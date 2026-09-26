@@ -5,6 +5,7 @@ import com.chitthi.document.model.Page;
 import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.pipeline.idempotency.StageTaskService;
 import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.SarvamProperties;
 import com.chitthi.storage.ObjectStorageService;
@@ -20,8 +21,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -37,14 +40,26 @@ class TtsWorkerTest {
     private final SarvamClient sarvamClient = mock(SarvamClient.class);
     private final SarvamProperties sarvamProperties = new SarvamProperties(
             "https://api.sarvam.ai", "test-key",
-            new SarvamProperties.RateLimits(10),
+            new SarvamProperties.Http(java.time.Duration.ofSeconds(5), java.time.Duration.ofSeconds(60)),
+            new SarvamProperties.RateLimits(10, 60, 60),
             new SarvamProperties.Pipeline(10, 2000, 2500, 5),
             new SarvamProperties.Translate("sarvam-translate:v1"),
             new SarvamProperties.Tts("bulbul:v3", "shubh", 22050));
     private final ObjectStorageService storageService = mock(ObjectStorageService.class);
     private final TtsStateService stateService = mock(TtsStateService.class);
+    private final StageTaskService stageTaskService = mock(StageTaskService.class);
     private final TtsWorker worker = new TtsWorker(
-            pageRepository, documentRepository, sarvamClient, sarvamProperties, storageService, stateService);
+            pageRepository, documentRepository, sarvamClient, sarvamProperties, storageService, stateService, stageTaskService);
+
+    {
+        // The idempotency guard is exercised in StageTaskServiceTest; here it
+        // just runs the call straight through, so these tests keep asserting
+        // on SarvamClient/ObjectStorageService the way they did before
+        // stage_task existed.
+        when(stageTaskService.callOnce(anyString(), any(), anyString(), any()))
+                .thenAnswer(invocation -> ((Supplier<String>) invocation.getArgument(3)).get());
+        when(storageService.getObject(anyString())).thenReturn(generateWav());
+    }
 
     @Test
     void skipsAPageThatIsNoLongerTranslated() {
@@ -133,7 +148,8 @@ class TtsWorkerTest {
         worker.onMessage(new TtsMessage(pageId));
 
         verify(sarvamClient, times(1)).synthesize(anyString(), anyString());
-        verify(storageService, times(1)).putObject(
+        // One chunk write plus the concatenated page-level track write.
+        verify(storageService, times(2)).putObject(
                 org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), anyString());
     }
 

@@ -2,6 +2,9 @@ package com.chitthi.ocr;
 
 import com.chitthi.document.model.Document;
 import com.chitthi.document.repository.DocumentRepository;
+import com.chitthi.messaging.PipelineQueues;
+import com.chitthi.messaging.outbox.OutboxService;
+import com.chitthi.ocr.message.OcrBatchMessage;
 import com.chitthi.ocr.model.OcrBatch;
 import com.chitthi.ocr.model.OcrBatchStatus;
 import com.chitthi.ocr.repository.OcrBatchRepository;
@@ -28,8 +31,9 @@ class OcrBatchStateServiceTest {
     private final OcrBatchRepository ocrBatchRepository = mock(OcrBatchRepository.class);
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
     private final OcrPollSchedule pollSchedule = mock(OcrPollSchedule.class);
+    private final OutboxService outboxService = mock(OutboxService.class);
     private final OcrBatchStateService stateService =
-            new OcrBatchStateService(ocrBatchRepository, documentRepository, pollSchedule);
+            new OcrBatchStateService(ocrBatchRepository, documentRepository, pollSchedule, outboxService);
 
     @Test
     void claimForSubmit_returnsBatchWhenTheUpdateAffectsARow() {
@@ -113,6 +117,7 @@ class OcrBatchStateServiceTest {
         assertThat(claimed.get(0).language()).isEqualTo("gu");
         assertThat(batch.getStatus()).isEqualTo(OcrBatchStatus.PENDING);
         assertThat(batch.getNextPollAt()).isAfter(OffsetDateTime.now());
+        verify(outboxService).enqueue(org.mockito.ArgumentMatchers.eq(PipelineQueues.OCR_QUEUE), any(OcrBatchMessage.class));
     }
 
     @Test

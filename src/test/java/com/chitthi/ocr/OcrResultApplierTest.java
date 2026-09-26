@@ -11,7 +11,10 @@ import com.chitthi.ocr.model.OcrBatchStatus;
 import com.chitthi.ocr.repository.OcrBatchRepository;
 import com.chitthi.ocr.result.ParsedPage;
 import com.chitthi.ocr.service.OcrResultApplier;
+import com.chitthi.messaging.PipelineQueues;
+import com.chitthi.messaging.outbox.OutboxService;
 import com.chitthi.progress.DocumentProgressEvent;
+import com.chitthi.translate.message.TranslateMessage;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -31,9 +34,10 @@ class OcrResultApplierTest {
     private final PageRepository pageRepository = mock(PageRepository.class);
     private final OcrBatchRepository ocrBatchRepository = mock(OcrBatchRepository.class);
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
+    private final OutboxService outboxService = mock(OutboxService.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final OcrResultApplier applier =
-            new OcrResultApplier(pageRepository, ocrBatchRepository, documentRepository, eventPublisher);
+            new OcrResultApplier(pageRepository, ocrBatchRepository, documentRepository, outboxService, eventPublisher);
 
     @Test
     void applyParsedResult_marksEveryPageOcrDoneWhenAllTextIsRecovered() {
@@ -53,8 +57,8 @@ class OcrResultApplierTest {
         assertThat(batch.getStatus()).isEqualTo(OcrBatchStatus.COMPLETED);
         assertThat(batch.getNextPollAt()).isNull();
         verify(documentRepository, never()).findById(any());
-        verify(eventPublisher, org.mockito.Mockito.times(2))
-                .publishEvent(org.mockito.ArgumentMatchers.any(com.chitthi.ocr.event.PageOcrCompletedEvent.class));
+        verify(outboxService, org.mockito.Mockito.times(2))
+                .enqueue(org.mockito.ArgumentMatchers.eq(PipelineQueues.TRANSLATE_QUEUE), org.mockito.ArgumentMatchers.any(TranslateMessage.class));
         verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 
@@ -77,8 +81,8 @@ class OcrResultApplierTest {
         assertThat(pages.get(1).getStatus()).isEqualTo(PageStatus.FAILED);
         assertThat(batch.getStatus()).isEqualTo(OcrBatchStatus.PARTIALLY_COMPLETED);
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.PARTIAL);
-        verify(eventPublisher, org.mockito.Mockito.times(1))
-                .publishEvent(org.mockito.ArgumentMatchers.any(com.chitthi.ocr.event.PageOcrCompletedEvent.class));
+        verify(outboxService, org.mockito.Mockito.times(1))
+                .enqueue(org.mockito.ArgumentMatchers.eq(PipelineQueues.TRANSLATE_QUEUE), org.mockito.ArgumentMatchers.any(TranslateMessage.class));
         verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 

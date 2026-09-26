@@ -103,6 +103,45 @@ section for the full page state machine.
     fine for a single instance; several instances would need a shared
     fanout (e.g. one RabbitMQ topic per document) — noted as a
     `TODO(scale)`.
+- **Day 8–9:** idempotency keys, a transactional outbox, delayed retry and
+  dead-letter queues, and Resilience4j limiters — the gaps every earlier
+  day's status notes flagged.
+  - `SarvamClient` routes every paid call through one Resilience4j chain
+    per endpoint (`vision-submit`, `translate`, `tts`): a 429 becomes
+    `SarvamRateLimitedException` and is retried using Sarvam's own
+    `Retry-After`, a circuit breaker opens on repeated 5xx/IO failures
+    (never on a 429 or another 4xx), and a rate limiter shapes calls as a
+    continuously-replenishing token bucket rather than a once-a-minute
+    reset.
+  - The four `@TransactionalEventListener(AFTER_COMMIT)` dispatchers are
+    gone. Every stage now enqueues its next message through a
+    transactional outbox (`OutboxService.enqueue`, in the same
+    transaction as the state change), relayed with publisher confirms by
+    `OutboxRelay` every 200ms — closing the crash-between-commit-and-publish
+    gap those dispatchers always had.
+  - Every translate and TTS chunk's Sarvam call is guarded by a
+    `stage_task` row keyed on `pageId:STAGE:track:chunkIndex:contentHash`
+    (`StageTaskService`): a redelivered message reuses a DONE row's result
+    with no second call, and a row still RUNNING under a live lease is
+    left alone rather than called again.
+  - A failing message goes through up to two delayed retry tiers
+    (`chitthi.retry.delays`, default 5s/30s) before it's dead-lettered —
+    one retry queue per (destination queue, delay), each declared with an
+    explicit `x-dead-letter-routing-key` back to its destination, so no
+    tier depends on RabbitMQ's default routing-key preservation. A pause
+    (rate limiter, circuit breaker, or a busy `stage_task`) goes back to
+    the first tier without spending an attempt. `POST
+    /api/documents/{id}/retry` (FR7) re-queues a document's FAILED pages
+    manually.
+  - `ChaosPipelineIntegrationTest` proves the acceptance criterion — 0
+    duplicate paid calls — by injecting a transient and a persistent 5xx
+    rather than killing a real worker process, which would repeat the Day
+    7 CI resource-pressure incident on the same shared runner. A real
+    "kill -9 mid-call" scenario is a manual exercise: run two `mvn
+    spring-boot:run` instances is not supported (only one worker set is
+    wired per process), so instead upload a document, kill the app
+    mid-TTS, and restart it — the `stage_task` rows show one DONE row per
+    chunk and the document still reaches `COMPLETE`.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
