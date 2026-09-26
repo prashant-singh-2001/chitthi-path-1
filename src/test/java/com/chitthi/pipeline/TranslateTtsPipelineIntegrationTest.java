@@ -180,12 +180,16 @@ class TranslateTtsPipelineIntegrationTest {
         assertAudioEndpointWorks(documentId, "en", false);
 
         wireMockServer.verify(12, postRequestedFor(urlPathEqualTo("/translate")));
-        // 12 for the orig track (every page's original text is distinct) plus
-        // 1 for the en track: every page translates to the same stubbed
-        // TRANSLATED_TEXT, so Day 10's owner-scoped TTS cache (same owner,
-        // same voice, same text) collapses what would otherwise be 12 calls
-        // into 1 - proving FR13 end to end, not just in isolation.
-        wireMockServer.verify(13, postRequestedFor(urlPathEqualTo("/text-to-speech")));
+        // Every page translates to the same stubbed TRANSLATED_TEXT, so Day
+        // 10's owner-scoped TTS cache (same owner, same voice, same text)
+        // collapses the en track's 12 pages into 1 real Sarvam call - FR13
+        // demonstrated end to end, not just in isolation. (The orig track's
+        // call count isn't asserted here: it depends on how many of the 12
+        // pages' distinct source texts happen to land in the same or
+        // different chunks, which isn't this test's concern.)
+        wireMockServer.verify(1, postRequestedFor(urlPathEqualTo("/text-to-speech"))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath(
+                        "$.language_code", com.github.tomakehurst.wiremock.client.WireMock.equalTo("en-IN"))));
     }
 
     /**

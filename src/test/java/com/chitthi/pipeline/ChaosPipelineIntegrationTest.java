@@ -175,8 +175,14 @@ class ChaosPipelineIntegrationTest {
     void aPersistentlyFailingStageExhaustsRetriesAndTheManualRetryEndpointRecoversIt() throws IOException {
         stubDigitiseSubmit("job-2");
         stubStatusCompleted("job-2");
-        stubDownload("job-2", DigitiseResultZips.perPageJson(1, i -> "Only page text"));
-        stubTranslate();
+        // Distinct text from the other test in this class: both documents
+        // share the same default owner, and Day 10's TTS cache is
+        // owner-scoped, not page-scoped - reusing the other test's text
+        // (and voice settings) would let its already-DONE stage_task rows
+        // serve this page's audio from cache, defeating the "always fails"
+        // stub entirely.
+        stubDownload("job-2", DigitiseResultZips.perPageJson(1, i -> "Exhaustion test page text"));
+        stubTranslateReturning("EXHAUSTION-TEST-TRANSLATED");
         stubTextToSpeechAlwaysFails();
 
         UUID documentId = uploadOnePagePdf();
@@ -255,9 +261,9 @@ class ChaosPipelineIntegrationTest {
                 .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/zip").withBody(resultZip)));
     }
 
-    private void stubTranslate() {
+    private void stubTranslateReturning(String translatedText) {
         wireMockServer.stubFor(post(urlPathEqualTo("/translate"))
-                .willReturn(okJson("{\"translated_text\": \"TRANSLATED\"}")));
+                .willReturn(okJson("{\"translated_text\": \"%s\"}".formatted(translatedText))));
     }
 
     /** Fails the endpoint's own retry chain (a real 5xx, not a 429) exactly once, then behaves normally. */
