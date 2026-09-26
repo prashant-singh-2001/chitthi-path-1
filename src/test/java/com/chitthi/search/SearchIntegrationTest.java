@@ -5,9 +5,8 @@ import com.chitthi.document.model.Page;
 import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -44,7 +43,6 @@ import static org.assertj.core.api.Assertions.assertThat;
         "chitthi.tts.worker.enabled=false",
         "chitthi.assemble.worker.enabled=false"
 })
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SearchIntegrationTest {
 
     private static final String OWNER = "search-owner";
@@ -93,11 +91,21 @@ class SearchIntegrationTest {
     @Autowired
     PageRepository pageRepository;
 
-    private final List<Document> documents = new ArrayList<>();
-    private final Map<UUID, Document> documentsById = new HashMap<>();
+    // Static: seeded once and reused across every @Test method's own
+    // instance (JUnit's default lifecycle creates a fresh test instance per
+    // method) - @TestInstance(PER_CLASS) would let @BeforeAll be non-static,
+    // but it also changes how @Testcontainers' extension callbacks order
+    // against Spring's @DynamicPropertySource, which broke container
+    // startup entirely.
+    private static final List<Document> documents = new ArrayList<>();
+    private static final Map<UUID, Document> documentsById = new HashMap<>();
+    private static final java.util.concurrent.atomic.AtomicBoolean seeded = new java.util.concurrent.atomic.AtomicBoolean();
 
-    @BeforeAll
-    void seedOneThousandPages() {
+    @BeforeEach
+    void seedOneThousandPagesOnce() {
+        if (!seeded.compareAndSet(false, true)) {
+            return;
+        }
         for (int d = 0; d < DOCUMENT_COUNT; d++) {
             String owner = d < OTHER_OWNER_FROM_INDEX ? OWNER : OTHER_OWNER;
             List<String> tags = d % 2 == 0 ? List.of("family") : List.of("work");
