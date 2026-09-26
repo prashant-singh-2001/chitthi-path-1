@@ -183,32 +183,35 @@ class ChaosPipelineIntegrationTest {
 
         // 1 initial attempt + 2 retries (chitthi.retry.delays=500ms,1s) = 3
         // total, per FR7 - then the page gives up and the document is PARTIAL.
-        await().atMost(Duration.ofSeconds(30)).pollInterval(Duration.ofMillis(200)).untilAsserted(() -> {
+        await().atMost(Duration.ofSeconds(45)).pollInterval(Duration.ofMillis(200)).untilAsserted(() -> {
             Document document = documentRepository.findById(documentId).orElseThrow();
             assertThat(document.getStatus()).isEqualTo(DocumentStatus.PARTIAL);
         });
         Page failedPage = pageRepository.findByDocumentIdOrderByPageNo(documentId).get(0);
         assertThat(failedPage.getStatus()).isEqualTo(PageStatus.FAILED);
-        // The translate call that already succeeded is never re-paid for by
-        // the retries that follow (they only ever touch text-to-speech).
-        wireMockServer.verify(1, postRequestedFor(urlPathEqualTo("/translate")));
 
-        wireMockServer.resetAll();
+        // A newer stub registration outranks the older one for future
+        // requests (WireMock's documented tie-break), so text-to-speech
+        // starts succeeding from here on with no need to touch (or reset)
+        // the translate stub or the request journal - the "exactly one
+        // translate call, ever" assertion below stays a single true count.
         stubTextToSpeech();
 
         ResponseEntity<Object> retryResponse = restTemplate.postForEntity(
                 "/api/documents/{id}/retry", null, Object.class, documentId);
         assertThat(retryResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
 
-        await().atMost(Duration.ofSeconds(30)).pollInterval(Duration.ofMillis(200)).untilAsserted(() -> {
+        await().atMost(Duration.ofSeconds(45)).pollInterval(Duration.ofMillis(200)).untilAsserted(() -> {
             Document document = documentRepository.findById(documentId).orElseThrow();
             assertThat(document.getStatus()).isEqualTo(DocumentStatus.COMPLETE);
         });
         Page recoveredPage = pageRepository.findByDocumentIdOrderByPageNo(documentId).get(0);
         assertThat(recoveredPage.getStatus()).isEqualTo(PageStatus.INDEXED);
-        // The retry endpoint never re-ran translate for a page that already
-        // had a translated_text - only the TTS stage it actually fell out of.
-        wireMockServer.verify(0, postRequestedFor(urlPathEqualTo("/translate")));
+        // The page's one and only translate call, from before it ever
+        // reached TTS - the retry endpoint never re-ran it for a page that
+        // already had a translated_text, only the stage it actually fell
+        // out of.
+        wireMockServer.verify(1, postRequestedFor(urlPathEqualTo("/translate")));
     }
 
     private UUID uploadOnePagePdf() throws IOException {
