@@ -3,8 +3,10 @@ name: Build
 on:
   push:
     branches: [main]
+  # No branches filter: stacked PRs (a branch based on another feature
+  # branch, not main) need CI too, and GitHub only fires pull_request
+  # against the PR's actual base, whatever that is.
   pull_request:
-    branches: [main]
 
 jobs:
   build:
