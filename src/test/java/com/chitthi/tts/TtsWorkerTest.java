@@ -5,6 +5,7 @@ import com.chitthi.document.model.Page;
 import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.pipeline.idempotency.StageTaskService;
 import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.SarvamProperties;
 import com.chitthi.storage.ObjectStorageService;
@@ -20,8 +21,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -44,8 +47,19 @@ class TtsWorkerTest {
             new SarvamProperties.Tts("bulbul:v3", "shubh", 22050));
     private final ObjectStorageService storageService = mock(ObjectStorageService.class);
     private final TtsStateService stateService = mock(TtsStateService.class);
+    private final StageTaskService stageTaskService = mock(StageTaskService.class);
     private final TtsWorker worker = new TtsWorker(
-            pageRepository, documentRepository, sarvamClient, sarvamProperties, storageService, stateService);
+            pageRepository, documentRepository, sarvamClient, sarvamProperties, storageService, stateService, stageTaskService);
+
+    {
+        // The idempotency guard is exercised in StageTaskServiceTest; here it
+        // just runs the call straight through, so these tests keep asserting
+        // on SarvamClient/ObjectStorageService the way they did before
+        // stage_task existed.
+        when(stageTaskService.callOnce(anyString(), any(), anyString(), any()))
+                .thenAnswer(invocation -> ((Supplier<String>) invocation.getArgument(3)).get());
+        when(storageService.getObject(anyString())).thenReturn(generateWav());
+    }
 
     @Test
     void skipsAPageThatIsNoLongerTranslated() {

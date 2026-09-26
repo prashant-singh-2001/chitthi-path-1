@@ -5,6 +5,7 @@ import com.chitthi.document.model.Page;
 import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
+import com.chitthi.pipeline.idempotency.StageTaskService;
 import com.chitthi.sarvam.SarvamClient;
 import com.chitthi.sarvam.SarvamProperties;
 import com.chitthi.translate.message.TranslateMessage;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -37,8 +39,17 @@ class TranslateWorkerTest {
             new SarvamProperties.Translate("sarvam-translate:v1"),
             new SarvamProperties.Tts("bulbul:v3", "shubh", 22050));
     private final TranslateStateService stateService = mock(TranslateStateService.class);
+    private final StageTaskService stageTaskService = mock(StageTaskService.class);
     private final TranslateWorker worker = new TranslateWorker(
-            pageRepository, documentRepository, sarvamClient, sarvamProperties, stateService);
+            pageRepository, documentRepository, sarvamClient, sarvamProperties, stateService, stageTaskService);
+
+    {
+        // The idempotency guard is exercised in StageTaskServiceTest; here it
+        // just runs the call straight through, so these tests keep asserting
+        // on SarvamClient the way they did before stage_task existed.
+        when(stageTaskService.callOnce(anyString(), any(), anyString(), any()))
+                .thenAnswer(invocation -> ((Supplier<String>) invocation.getArgument(3)).get());
+    }
 
     @Test
     void skipsAPageThatIsNoLongerOcrDone() {

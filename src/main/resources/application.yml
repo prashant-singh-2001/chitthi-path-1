@@ -107,6 +107,10 @@ chitthi:
     relay-interval-ms: 200
     batch-size: 50
     purge-after-days: 7
+  stage-task:
+    # Must outlast sarvam.http.read-timeout, or a worker still genuinely
+    # mid-call could have its claim taken over by a second worker.
+    lease: 90s
 
 sarvam:
   base-url: https://api.sarvam.ai
