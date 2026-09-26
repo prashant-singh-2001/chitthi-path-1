@@ -87,17 +87,19 @@ public class PipelineMessageRecoverer implements MessageRecoverer {
     }
 
     /**
-     * Republishing under the message's original routing key ({@code
-     * originalQueue}) is what lets the retry tier's dead-lettering (see
-     * {@code RabbitMqConfig#retryQueues}) return it to the right queue with
-     * no explicit {@code dead-letter-routing-key} needed.
+     * Publishes directly to the tier queue named for this destination and
+     * delay, via the default exchange (every queue's implicit binding to it
+     * under its own name) - see {@code RabbitMqConfig#retryQueues} for how
+     * that queue's own {@code x-dead-letter-routing-key} guarantees the
+     * message returns to {@code originalQueue} once its TTL expires.
      */
     private void republish(Message message, String originalQueue, Duration delay, int nextAttempt) {
         MessageProperties properties = message.getMessageProperties();
         properties.setHeader(ATTEMPT_HEADER, nextAttempt);
         Message retryMessage = new Message(message.getBody(), properties);
-        rabbitTemplate.convertAndSend(PipelineQueues.RETRY_EXCHANGE, originalQueue, retryMessage);
-        log.debug("Sent message for {} to the {} retry tier", originalQueue, delay);
+        String tierQueue = PipelineQueues.retryQueueName(originalQueue, delay);
+        rabbitTemplate.send("", tierQueue, retryMessage);
+        log.debug("Sent message for {} to retry tier {}", originalQueue, tierQueue);
     }
 
     private int currentAttempt(Message message) {

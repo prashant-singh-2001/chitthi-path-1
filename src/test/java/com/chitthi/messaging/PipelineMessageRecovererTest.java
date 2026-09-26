@@ -43,7 +43,7 @@ class PipelineMessageRecovererTest {
 
         recoverer.recover(message, new RuntimeException("boom"));
 
-        verify(rabbitTemplate).convertAndSend(eq(PipelineQueues.RETRY_EXCHANGE), eq("translate.queue"), any(Message.class));
+        verify(rabbitTemplate).send(eq(""), eq(PipelineQueues.retryQueueName("translate.queue", Duration.ofSeconds(5))), any(Message.class));
         verify(failureStateService, never()).markPageFailed(any());
     }
 
@@ -58,7 +58,7 @@ class PipelineMessageRecovererTest {
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
 
         verify(failureStateService).markPageFailed(pageId);
-        verify(rabbitTemplate, never()).convertAndSend(eq(PipelineQueues.RETRY_EXCHANGE), org.mockito.ArgumentMatchers.anyString(), any(Message.class));
+        verify(rabbitTemplate, never()).send(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), any(Message.class));
     }
 
     @Test
@@ -86,7 +86,7 @@ class PipelineMessageRecovererTest {
 
         recoverer.recover(message, pauseException);
 
-        verify(rabbitTemplate).convertAndSend(eq(PipelineQueues.RETRY_EXCHANGE), eq("tts.queue"), any(Message.class));
+        verify(rabbitTemplate).send(eq(""), eq(PipelineQueues.retryQueueName("tts.queue", Duration.ofSeconds(5))), any(Message.class));
         verify(failureStateService, never()).markPageFailed(any());
     }
 
@@ -102,7 +102,7 @@ class PipelineMessageRecovererTest {
 
         recoverer.recover(message, pauseException);
 
-        verify(rabbitTemplate).convertAndSend(eq(PipelineQueues.RETRY_EXCHANGE), eq("translate.queue"), any(Message.class));
+        verify(rabbitTemplate).send(eq(""), eq(PipelineQueues.retryQueueName("translate.queue", Duration.ofSeconds(5))), any(Message.class));
         verify(failureStateService, never()).markPageFailed(any());
     }
 
@@ -112,7 +112,7 @@ class PipelineMessageRecovererTest {
 
         recoverer.recover(message, new StageTaskBusyException("some-key"));
 
-        verify(rabbitTemplate).convertAndSend(eq(PipelineQueues.RETRY_EXCHANGE), eq("translate.queue"), any(Message.class));
+        verify(rabbitTemplate).send(eq(""), eq(PipelineQueues.retryQueueName("translate.queue", Duration.ofSeconds(5))), any(Message.class));
         verify(failureStateService, never()).markPageFailed(any());
     }
 
