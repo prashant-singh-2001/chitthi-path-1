@@ -77,7 +77,8 @@ class PipelineMessageRecovererTest {
     @Test
     void requestNotPermittedPausesWithoutSpendingAnAttempt() {
         RateLimiter limiter = RateLimiter.of("test", RateLimiterConfig.custom()
-                .limitForPeriod(0).timeoutDuration(Duration.ZERO).build());
+                .limitForPeriod(1).limitRefreshPeriod(Duration.ofMinutes(1)).timeoutDuration(Duration.ZERO).build());
+        limiter.acquirePermission(); // exhaust the only permit so the next acquisition is refused
         RequestNotPermitted pauseException = captureRequestNotPermitted(limiter);
 
         Message message = jsonMessage("{\"pageId\": \"" + UUID.randomUUID() + "\"}", "tts.queue");
@@ -92,7 +93,7 @@ class PipelineMessageRecovererTest {
     @Test
     void callNotPermittedPausesWithoutSpendingAnAttempt() {
         CircuitBreaker breaker = CircuitBreaker.of("test", CircuitBreakerConfig.custom()
-                .slidingWindowSize(1).minimumNumberOfCalls(1).failureRateThreshold(0.01f)
+                .slidingWindowSize(1).minimumNumberOfCalls(1).failureRateThreshold(1f)
                 .waitDurationInOpenState(Duration.ofMinutes(5)).build());
         breaker.transitionToOpenState();
         CallNotPermittedException pauseException = CallNotPermittedException.createCallNotPermittedException(breaker);
