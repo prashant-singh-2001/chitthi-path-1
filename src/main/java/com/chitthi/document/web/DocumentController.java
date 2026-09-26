@@ -15,6 +15,8 @@ import com.chitthi.progress.ProgressSnapshot;
 import com.chitthi.progress.ProgressSnapshotService;
 import com.chitthi.progress.SseEmitterRegistry;
 import com.chitthi.storage.ObjectStorageService;
+import com.chitthi.usage.UsageQueryService;
+import com.chitthi.usage.web.DocumentUsageView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -60,6 +62,7 @@ public class DocumentController {
     private final ProgressProperties progressProperties;
     private final DocumentRetryService retryService;
     private final PageEditService pageEditService;
+    private final UsageQueryService usageQueryService;
 
     public DocumentController(DocumentUploadService uploadService,
                                DocumentRepository documentRepository,
@@ -70,7 +73,8 @@ public class DocumentController {
                                ProgressSnapshotService snapshotService,
                                ProgressProperties progressProperties,
                                DocumentRetryService retryService,
-                               PageEditService pageEditService) {
+                               PageEditService pageEditService,
+                               UsageQueryService usageQueryService) {
         this.uploadService = uploadService;
         this.documentRepository = documentRepository;
         this.pageRepository = pageRepository;
@@ -81,6 +85,7 @@ public class DocumentController {
         this.progressProperties = progressProperties;
         this.retryService = retryService;
         this.pageEditService = pageEditService;
+        this.usageQueryService = usageQueryService;
     }
 
     @PostMapping
@@ -173,5 +178,14 @@ public class DocumentController {
                                                   @RequestBody PageTextEditRequest request) {
         Page page = pageEditService.editText(id, pageNo, request.text());
         return ResponseEntity.accepted().body(PageView.from(page));
+    }
+
+    /** FR10: per-document cost and latency, broken down by Sarvam endpoint. See {@link UsageQueryService}. */
+    @GetMapping("/{id}/usage")
+    public DocumentUsageView usage(@PathVariable UUID id) {
+        if (!documentRepository.existsById(id)) {
+            throw new DocumentNotFoundException(id);
+        }
+        return usageQueryService.documentUsage(id);
     }
 }
