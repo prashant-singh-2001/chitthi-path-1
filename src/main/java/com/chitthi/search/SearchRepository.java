@@ -19,6 +19,12 @@ import java.util.UUID;
  * apply to the same row's snippet, since a page's own language only ever
  * lands on one side.
  *
+ * <p>{@code ts_headline}'s {@code StartSel}/{@code StopSel} are set to empty
+ * strings: by default it wraps matches in {@code <b>...</b>}, but the
+ * surrounding text is the user's own uploaded content, verbatim and
+ * unescaped - rendering that as HTML client-side would be a stored-XSS
+ * vector. The snippet is plain text end to end instead.
+ *
  * <p>Built with {@link NamedParameterJdbcTemplate} rather than a fixed
  * {@code @Query} string: the tag and year filters are optional, and a
  * Postgres native query can't infer a null parameter's type cleanly when the
@@ -48,7 +54,7 @@ public class SearchRepository {
                        CASE WHEN p.translated_tsv @@ websearch_to_tsquery('english', :q) THEN 'TRANSLATED' ELSE 'ORIGINAL' END AS matched_in,
                        CASE WHEN p.translated_tsv @@ websearch_to_tsquery('english', :q)
                             THEN ts_headline('english', coalesce(p.translated_text, ''), websearch_to_tsquery('english', :q),
-                                              'MaxFragments=1,MaxWords=25,MinWords=8')
+                                              'MaxFragments=1,MaxWords=25,MinWords=8,StartSel=,StopSel=')
                             ELSE substring(coalesce(p.original_text, '') FROM greatest(1, strpos(coalesce(p.original_text, ''), :q) - 60) FOR 200)
                        END AS snippet,
                        (ts_rank(p.translated_tsv, websearch_to_tsquery('english', :q))

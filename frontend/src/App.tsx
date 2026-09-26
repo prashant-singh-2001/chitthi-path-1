@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AudioPlayer } from './components/AudioPlayer'
 import { DocumentProgress } from './components/DocumentProgress'
+import { SearchBox } from './components/SearchBox'
 import { UploadForm } from './components/UploadForm'
 import { isTerminalDocumentStatus } from './api/progress'
 
@@ -12,7 +13,7 @@ export default function App() {
   const [documentId, setDocumentId] = useState<string | null>(readDocumentIdFromUrl)
   const [documentReady, setDocumentReady] = useState(false)
 
-  function handleUploaded(id: string) {
+  function openDocument(id: string) {
     setDocumentId(id)
     setDocumentReady(false)
     const params = new URLSearchParams(window.location.search)
@@ -23,7 +24,8 @@ export default function App() {
   return (
     <main>
       <h1>Chitthi</h1>
-      <UploadForm onUploaded={handleUploaded} />
+      <UploadForm onUploaded={openDocument} />
+      <SearchBox onSelectDocument={openDocument} />
       {documentId && (
         <>
           <DocumentProgress

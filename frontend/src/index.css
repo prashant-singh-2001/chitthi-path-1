@@ -120,6 +120,30 @@ button {
   margin-top: 6px;
 }
 
+.search-hit {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: #2563eb;
+  cursor: pointer;
+  text-align: left;
+}
+
+.search-snippet {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #4b5563;
+}
+
+.cost-summary {
+  font-size: 14px;
+}
+
+.cost-breakdown {
+  color: #6b7280;
+}
+
 .audio-track {
   margin-bottom: 16px;
 }

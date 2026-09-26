@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { PageView, ProgressSnapshot } from '../api/types'
+import type { DocumentUsageView, PageView, ProgressSnapshot } from '../api/types'
 import { canEditPage, isFailed, isTerminalDocumentStatus, STAGE_LABELS, stageIndex } from '../api/progress'
 import { editPageText, fetchDocument } from '../api/document'
+import { fetchDocumentUsage } from '../api/usage'
 import { PageEditor } from './PageEditor'
 
 interface Props {
@@ -18,6 +19,7 @@ export function DocumentProgress({ documentId, onStatusChange }: Props) {
   const [pageDetails, setPageDetails] = useState<Record<number, PageView>>({})
   const [editingPageNo, setEditingPageNo] = useState<number | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
+  const [usage, setUsage] = useState<DocumentUsageView | null>(null)
 
   useEffect(() => {
     setSnapshot(null)
@@ -66,6 +68,27 @@ export function DocumentProgress({ documentId, onStatusChange }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, snapshot?.status])
 
+  // FR10: fetches the cost ledger once the document settles, same trigger as
+  // the page-detail fetch above - it refetches after an edit completes too,
+  // since regenerating a page adds spend.
+  useEffect(() => {
+    if (!snapshot || !isTerminalDocumentStatus(snapshot.status)) {
+      return
+    }
+    let cancelled = false
+    fetchDocumentUsage(documentId)
+      .then((view) => {
+        if (!cancelled) setUsage(view)
+      })
+      .catch(() => {
+        // Non-fatal: the cost summary just stays hidden.
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentId, snapshot?.status])
+
   async function handleSave(pageNo: number, text: string) {
     setEditError(null)
     try {
@@ -88,6 +111,17 @@ export function DocumentProgress({ documentId, onStatusChange }: Props) {
       </h2>
       {connectionLost && <p className="warning">Connection lost; showing the last known state.</p>}
       {editError && <p className="error">{editError}</p>}
+      {usage && (
+        <p className="cost-summary">
+          Estimated cost: ₹{usage.totalCostInr.toFixed(2)}
+          {usage.byEndpoint.length > 0 && (
+            <span className="cost-breakdown">
+              {' '}
+              ({usage.byEndpoint.map((e) => `${e.endpoint}: ₹${e.costInr.toFixed(2)}`).join(', ')})
+            </span>
+          )}
+        </p>
+      )}
       <ul className="page-list">
         {snapshot.pages.map((page) => {
           const detail = pageDetails[page.pageNo]
