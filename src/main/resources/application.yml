@@ -154,6 +154,15 @@ management:
     web:
       exposure:
         include: health, info, prometheus, metrics
+  metrics:
+    distribution:
+      percentiles:
+        # p50/p95 for the Grafana dashboard's Sarvam-latency and
+        # search-latency panels. Named per meter (not global), so this
+        # doesn't add percentile computation overhead to every timer in the
+        # app - only the ones the dashboard actually reads.
+        chitthi.sarvam.latency: 0.5, 0.95
+        http.server.requests: 0.5, 0.95
 
 logging:
   pattern:

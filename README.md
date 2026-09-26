@@ -194,7 +194,20 @@ native Postgres install already occupies it on this machine), RabbitMQ
 standing in for object storage — MinIO's own images are no longer
 freely pullable from either Docker Hub or quay.io as of September 2026,
 so `ObjectStorageService`'s MinIO Java client points at LocalStack
-instead; it speaks the generic S3 API either way.
+instead; it speaks the generic S3 API either way. It also starts
+Prometheus (`9090`) and Grafana (`3000`) — see below.
+
+## Run the dashboard
+
+`docker compose up -d` also starts Prometheus and Grafana, provisioned
+from `infra/`. Prometheus scrapes the app's `/actuator/prometheus`
+endpoint (`infra/prometheus/prometheus.yml`), so run the app itself
+outside Docker (`mvn spring-boot:run`) alongside the compose stack.
+
+Open `http://localhost:3000` (anonymous viewer access, no login needed)
+— the "Chitthi" dashboard is provisioned automatically, showing Sarvam
+call rate, latency and estimated spend per endpoint, units consumed,
+`/api/search` latency, and the outbox's unpublished-row backlog.
 
 ## Build and test
 

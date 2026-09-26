@@ -20,4 +20,7 @@ public interface OutboxRepository extends JpaRepository<OutboxMessage, UUID> {
     List<OutboxMessage> lockUnpublished(@Param("limit") int limit);
 
     long deleteByPublishedAtBefore(OffsetDateTime cutoff);
+
+    /** Backs the {@code chitthi.outbox.unpublished} gauge - the same partial index {@link #lockUnpublished} uses makes this cheap. */
+    long countByPublishedAtIsNull();
 }

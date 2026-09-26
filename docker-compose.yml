@@ -49,6 +49,35 @@ services:
       timeout: 5s
       retries: 10
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - chitthi-prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      # Linux Docker has no host.docker.internal by default - Docker Desktop
+      # (Mac/Windows) already provides it. The app itself runs outside
+      # Docker (mvn spring-boot:run), so Prometheus scrapes it via the host.
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - chitthi-grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   chitthi-postgres-data:
   chitthi-localstack-data:
+  chitthi-prometheus-data:
+  chitthi-grafana-data:
