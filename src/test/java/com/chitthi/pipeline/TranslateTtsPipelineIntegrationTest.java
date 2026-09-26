@@ -211,7 +211,14 @@ class TranslateTtsPipelineIntegrationTest {
         stubDigitiseSubmit("_1-1.zip", "job-1-1");
         stubStatusCompleted("job-1-1");
         stubDownload("job-1-1", DigitiseResultZips.perPageJson(1, i -> "Only page text"));
-        stubTranslate();
+        // Distinct translated text from the 12-page test above: both
+        // documents share the same default owner, and Day 10's TTS cache is
+        // owner-scoped, not page-scoped - stubTranslate()'s shared
+        // TRANSLATED_TEXT would let this page's en track resolve from the
+        // other test's already-DONE stage_task row instead of making its own
+        // call, which the SSE assertion below depends on seeing.
+        wireMockServer.stubFor(post(urlPathEqualTo("/translate"))
+                .willReturn(okJson("{\"translated_text\": \"SSE-TEST-TRANSLATED\"}")));
         stubTextToSpeech();
 
         UUID documentId = uploadOnePagePdf();
