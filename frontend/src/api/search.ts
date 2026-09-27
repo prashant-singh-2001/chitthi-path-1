@@ -1,3 +1,4 @@
+import { reportIfSessionExpired } from './auth'
 import type { SearchResponse } from './types'
 
 export async function search(q: string, tag?: string, year?: number): Promise<SearchResponse> {
@@ -6,6 +7,7 @@ export async function search(q: string, tag?: string, year?: number): Promise<Se
   if (year) params.set('year', String(year))
 
   const response = await fetch(`/api/search?${params.toString()}`)
+  reportIfSessionExpired(response)
   if (!response.ok) {
     const body = await response.json().catch(() => null)
     throw new Error((body && body.message) || `Search failed (${response.status})`)
