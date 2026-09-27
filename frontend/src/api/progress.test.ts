@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canEditPage, isFailed, isTerminalDocumentStatus, percentComplete, stageIndex } from './progress'
+import { canEditPage, isCapped, isFailed, isTerminalDocumentStatus, percentComplete, stageIndex } from './progress'
 
 describe('stageIndex', () => {
   it('maps known statuses to their position on the track', () => {
@@ -22,6 +22,13 @@ describe('isFailed', () => {
   })
 })
 
+describe('isCapped', () => {
+  it('is true only for CAPPED', () => {
+    expect(isCapped('CAPPED')).toBe(true)
+    expect(isCapped('INDEXED')).toBe(false)
+  })
+})
+
 describe('percentComplete', () => {
   it('is 0 for an empty page list', () => {
     expect(percentComplete([])).toBe(0)
@@ -37,6 +44,10 @@ describe('percentComplete', () => {
 
   it('counts a failed page as fully progressed', () => {
     expect(percentComplete([{ status: 'FAILED' }])).toBe(100)
+  })
+
+  it('counts a capped page as fully progressed - it will never advance on its own', () => {
+    expect(percentComplete([{ status: 'CAPPED' }])).toBe(100)
   })
 
   it('averages a mix of stages', () => {

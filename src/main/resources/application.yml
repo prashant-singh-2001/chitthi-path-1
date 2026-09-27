@@ -61,6 +61,12 @@ chitthi:
     # because dev-user is set at all; with it unset, that header is never
     # read by anything.
     dev-user: ${CHITTHI_DEV_USER:}
+  cap:
+    # FR15's cost ceiling. The day is a calendar day in this zone, so the
+    # budget resets at local midnight for this product's users rather than
+    # at 05:30 IST (UTC midnight).
+    daily-words: 7000
+    zone: Asia/Kolkata
   ocr:
     worker:
       enabled: true

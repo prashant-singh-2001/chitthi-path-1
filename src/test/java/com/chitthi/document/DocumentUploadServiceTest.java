@@ -1,5 +1,7 @@
 package com.chitthi.document;
 
+import com.chitthi.cap.DailyWordCapExceededException;
+import com.chitthi.cap.WordBudgetService;
 import com.chitthi.document.model.Page;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.service.DocumentPersistenceService;
@@ -34,9 +36,24 @@ class DocumentUploadServiceTest {
     private final DocumentPersistenceService persistenceService = mock(DocumentPersistenceService.class);
     private final ObjectStorageService storageService = mock(ObjectStorageService.class);
     private final PdfPageSplitter pdfPageSplitter = mock(PdfPageSplitter.class);
+    private final WordBudgetService wordBudgetService = mock(WordBudgetService.class);
 
     private final DocumentUploadService uploadService = new DocumentUploadService(
-            documentRepository, persistenceService, storageService, pdfPageSplitter);
+            documentRepository, persistenceService, storageService, pdfPageSplitter, wordBudgetService);
+
+    DocumentUploadServiceTest() {
+        when(wordBudgetService.remainingWords(any())).thenReturn(7000);
+    }
+
+    @Test
+    void uploadIsRejectedOnceTheDailyWordBudgetIsSpent() {
+        when(wordBudgetService.remainingWords("user")).thenReturn(0);
+        MockMultipartFile page = new MockMultipartFile("files", "a.png", "image/png", "one".getBytes());
+
+        assertThatThrownBy(() -> uploadService.upload("user", "title", "hi", null, null, List.of(page)))
+                .isInstanceOf(DailyWordCapExceededException.class);
+        verify(storageService, never()).putObject(any(), any(), any());
+    }
 
     @Test
     void oversizedPdf_isRejectedWithoutRendering() {

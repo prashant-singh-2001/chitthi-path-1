@@ -37,7 +37,7 @@ public class AssembleStateService {
     }
 
     @Transactional
-    public void finalizeDocument(UUID documentId, boolean anyPageFailed) {
+    public void finalizeDocument(UUID documentId, boolean anyPageIncomplete) {
         List<Page> pages = pageRepository.findByDocumentIdOrderByPageNo(documentId);
         for (Page page : pages) {
             if (page.getStatus() == PageStatus.AUDIO_DONE) {
@@ -48,7 +48,7 @@ public class AssembleStateService {
 
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalStateException("Document not found: " + documentId));
-        document.setStatus(anyPageFailed ? DocumentStatus.PARTIAL : DocumentStatus.COMPLETE);
+        document.setStatus(anyPageIncomplete ? DocumentStatus.PARTIAL : DocumentStatus.COMPLETE);
         documentRepository.save(document);
 
         eventPublisher.publishEvent(new DocumentProgressEvent(documentId));

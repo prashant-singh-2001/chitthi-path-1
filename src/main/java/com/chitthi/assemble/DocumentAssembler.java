@@ -73,14 +73,18 @@ public class DocumentAssembler {
             assembleTrack(documentId, track, pages);
         }
 
-        boolean anyFailed = pages.stream().anyMatch(p -> p.getStatus() == PageStatus.FAILED);
-        stateService.finalizeDocument(documentId, anyFailed);
+        // FAILED never finished at all; CAPPED (FR15) stopped deliberately
+        // before translation and TTS. Either way the document did not fully
+        // complete, so it settles PARTIAL rather than COMPLETE.
+        boolean anyIncomplete = pages.stream()
+                .anyMatch(p -> p.getStatus() == PageStatus.FAILED || p.getStatus() == PageStatus.CAPPED);
+        stateService.finalizeDocument(documentId, anyIncomplete);
     }
 
     private void assembleTrack(UUID documentId, String track, List<Page> pages) {
         List<byte[]> pageWavs = new ArrayList<>();
         for (Page page : pages) {
-            if (page.getStatus() == PageStatus.FAILED) {
+            if (page.getStatus() == PageStatus.FAILED || page.getStatus() == PageStatus.CAPPED) {
                 continue;
             }
             String key = "documents/%s/audio/%s/%03d.wav".formatted(documentId, track, page.getPageNo());

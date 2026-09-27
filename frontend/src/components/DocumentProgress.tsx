@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DocumentUsageView, PageView, ProgressSnapshot } from '../api/types'
-import { canEditPage, isFailed, isTerminalDocumentStatus, STAGE_LABELS, stageIndex } from '../api/progress'
+import { canEditPage, isCapped, isFailed, isTerminalDocumentStatus, STAGE_LABELS, stageIndex } from '../api/progress'
 import { editPageText, fetchDocument } from '../api/document'
 import { fetchDocumentUsage } from '../api/usage'
 import { PageEditor } from './PageEditor'
@@ -111,6 +111,12 @@ export function DocumentProgress({ documentId, onStatusChange }: Props) {
       </h2>
       {connectionLost && <p className="warning">Connection lost; showing the last known state.</p>}
       {editError && <p className="error">{editError}</p>}
+      {snapshot.pages.some((page) => isCapped(page.status)) && (
+        <p className="notice">
+          Some pages hit today's daily word limit and stopped before translation and audio. Retry tomorrow to
+          resume them.
+        </p>
+      )}
       {usage && (
         <p className="cost-summary">
           Estimated cost: ₹{usage.totalCostInr.toFixed(2)}
@@ -127,11 +133,15 @@ export function DocumentProgress({ documentId, onStatusChange }: Props) {
           const detail = pageDetails[page.pageNo]
           const isEditing = editingPageNo === page.pageNo
           return (
-            <li key={page.pageNo} className={isFailed(page.status) ? 'page-failed' : undefined}>
+            <li key={page.pageNo} className={isFailed(page.status) || isCapped(page.status) ? 'page-failed' : undefined}>
               <div className="page-row">
                 <span>Page {page.pageNo}</span>
                 <span>
-                  {isFailed(page.status) ? 'Failed' : (STAGE_LABELS[stageIndex(page.status)] ?? page.status)}
+                  {isFailed(page.status)
+                    ? 'Failed'
+                    : isCapped(page.status)
+                      ? 'Daily limit reached'
+                      : (STAGE_LABELS[stageIndex(page.status)] ?? page.status)}
                   {detail?.edited && <span className="edited-badge"> (edited)</span>}
                 </span>
                 {!isEditing && canEditPage(snapshot.status, page.status) && (

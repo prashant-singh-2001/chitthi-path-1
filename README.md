@@ -171,9 +171,9 @@ section for the full page state machine.
     3's text, while pages 1 and 2 go untouched; reverting page 3 to its
     original text costs zero new calls of either kind, since Day 8–9's
     `stage_task` rows from the first pass already answer both.
-- **Day 11 (part 1 of 2):** search, a usage ledger and a Grafana dashboard
+- **Day 11 (part 1 of 3):** search, a usage ledger and a Grafana dashboard
   — search under 300ms, cost per document visible. (Sign-in and the daily
-  word cap are part 2, a separate stacked PR.)
+  word cap are parts 2 and 3, separate stacked PRs.)
   - `UsageMeter` (FR10) wraps every real Sarvam call — never a
     `stage_task`/TTS-cache hit, since that never reaches the network — and
     records it in the existing `api_call` table with an estimated cost
@@ -197,9 +197,10 @@ section for the full page state machine.
   - Found along the way: `ts_headline`'s snippet is the user's own
     uploaded text, unescaped — rendering it as HTML client-side would have
     been a stored-XSS vector. Snippets are plain text end to end instead.
-- **Day 11 (part 2 of 2):** Google sign-in and per-user scoping (FR14) —
-  one user never sees another's documents. (The daily word cap and
-  per-IP rate limits, FR15, are a separate stacked PR.)
+- **Day 11 (part 2 of 3):** Google sign-in and per-user scoping (FR14) —
+  one user never sees another's documents. (The daily word cap, FR15,
+  is part 3, a separate stacked PR; its per-IP rate limits are their
+  own follow-up PR beyond that.)
   - Every `/api/**` request now requires authentication; before this,
     ownership came from a client-supplied `X-User-Id` header trusted
     with no verification at all — a complete auth bypass. Google
@@ -239,6 +240,39 @@ section for the full page state machine.
     killing the connection after the response was already committed.
     `DevUserAuthenticationFilter` now re-authenticates on async
     dispatch too.
+- **Day 11 (part 3 of 3):** the daily word cap (FR15) — a page whose
+  words don't fit its owner's remaining 7,000-word daily budget stops
+  before translation and TTS, the actual cost drivers. (Per-IP rate
+  limits are their own follow-up PR.)
+  - `user_daily_usage(owner_id, day, words)` is claimed with a single
+    `INSERT ... ON CONFLICT DO UPDATE` whose `WHERE` clause on both
+    branches rejects a claim that would push the total past the cap —
+    two callers racing for the last of a budget can never both win, the
+    same way Day 8–9's `stage_task` claim prevents a duplicate paid
+    call. The day is a calendar day in `Asia/Kolkata`
+    (`chitthi.cap.zone`), not UTC, so the budget resets at local
+    midnight for this product's users.
+  - `OcrResultApplier` claims the budget inside its existing
+    transaction: a page that doesn't fit stops at the new
+    `PageStatus.CAPPED` instead of `OCR_DONE` and enqueues nothing — no
+    translate or TTS call happens for it at all. `CAPPED` ripples
+    through the same places `FAILED` already does: `DocumentAssembler`
+    counts it toward `PARTIAL`, `DocumentRetryService` re-queues a
+    capped page once the budget frees up (`POST /{id}/retry` is the
+    "resume tomorrow" path, no new scheduler needed), and
+    `PageEditService` claims budget on every edit — otherwise
+    repeatedly editing one page would be an unlimited way around the
+    cap.
+  - An upload is rejected with 429 (plus a `Retry-After` header and the
+    reset time in the body) once the day's budget is already spent,
+    checked before rendering the PDF.
+  - `WordCapIntegrationTest` is the milestone: with a small configured
+    cap, one page's words spend the whole budget and the next stops at
+    `CAPPED` — verified against WireMock that no translate call was
+    ever made for it, not just that its status field changed.
+    `WordBudgetConcurrencyIntegrationTest` races 50 concurrent claims
+    against a small cap and asserts the total ever granted never
+    exceeds it.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
@@ -325,6 +359,13 @@ one to use the app at all:
   `http://localhost:8080/login/oauth2/code/google` for local testing)
   and visit `/oauth2/authorization/google`. This is the only path that
   works once `chitthi.security.dev-user` is unset.
+
+### Daily word cap (FR15)
+
+`chitthi.cap.daily-words` (default `7000`) and `chitthi.cap.zone`
+(default `Asia/Kolkata`) control the per-user daily budget. Lower
+`daily-words` locally (e.g. `50`) to see a page hit `CAPPED` without
+uploading a genuinely huge document.
 
 ## Contributing
 

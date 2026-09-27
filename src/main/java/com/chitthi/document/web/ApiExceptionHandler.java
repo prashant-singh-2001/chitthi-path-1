@@ -1,5 +1,6 @@
 package com.chitthi.document.web;
 
+import com.chitthi.cap.DailyWordCapExceededException;
 import com.chitthi.document.service.DocumentNotFoundException;
 import com.chitthi.document.service.InvalidPageTextException;
 import com.chitthi.document.service.PageNotFoundException;
@@ -7,6 +8,7 @@ import com.chitthi.document.service.PageNotReadyException;
 import com.chitthi.document.service.PageSplitException;
 import com.chitthi.document.service.UploadValidationException;
 import com.chitthi.search.InvalidSearchQueryException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -57,5 +59,13 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidSearchQueryException.class)
     public ResponseEntity<ErrorResponse> handleInvalidSearchQuery(InvalidSearchQueryException e) {
         return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+    }
+
+    @ExceptionHandler(DailyWordCapExceededException.class)
+    public ResponseEntity<DailyCapErrorResponse> handleDailyCapExceeded(DailyWordCapExceededException e) {
+        long retryAfterSeconds = Math.max(0, java.time.Duration.between(java.time.OffsetDateTime.now(), e.resetAt()).toSeconds());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds))
+                .body(new DailyCapErrorResponse(e.getMessage(), e.resetAt(), e.usedWords(), e.limitWords()));
     }
 }

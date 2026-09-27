@@ -54,8 +54,10 @@ export function UploadForm({ onUploaded }: Props) {
       })
       reportIfSessionExpired(response)
       if (!response.ok) {
-        const text = await response.text()
-        throw new Error(text || `Upload failed (${response.status})`)
+        // 429 (FR15's daily word cap) and other JSON error bodies carry a
+        // "message" field; anything else falls back to the raw response text.
+        const body = await response.json().catch(() => null)
+        throw new Error((body && body.message) || `Upload failed (${response.status})`)
       }
       const data = (await response.json()) as DocumentUploadResponse
       onUploaded(data.id)

@@ -21,10 +21,16 @@ export function isFailed(status: string): boolean {
   return status === 'FAILED'
 }
 
+/** FR15: a page whose words didn't fit the owner's daily budget - it stopped before translation and TTS. */
+export function isCapped(status: string): boolean {
+  return status === 'CAPPED'
+}
+
 /**
- * A failed page counts as fully progressed for this percentage - it will
- * never advance further, and hiding it from a "done" reading would leave the
- * bar stuck below 100% forever on a PARTIAL document.
+ * A failed or capped page counts as fully progressed for this percentage -
+ * neither will ever advance further on its own, and hiding either from a
+ * "done" reading would leave the bar stuck below 100% forever on a document
+ * that has otherwise settled.
  */
 export function percentComplete(pages: { status: string }[]): number {
   if (pages.length === 0) {
@@ -33,7 +39,7 @@ export function percentComplete(pages: { status: string }[]): number {
   const maxStage = STAGE_ORDER.length - 1
   const total = pages.length * maxStage
   const done = pages.reduce(
-    (sum, page) => sum + (isFailed(page.status) ? maxStage : stageIndex(page.status)),
+    (sum, page) => sum + (isFailed(page.status) || isCapped(page.status) ? maxStage : stageIndex(page.status)),
     0,
   )
   return Math.round((done / total) * 100)
