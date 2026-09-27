@@ -1,5 +1,6 @@
 package com.chitthi.document;
 
+import com.chitthi.cap.WordBudgetService;
 import com.chitthi.document.model.Document;
 import com.chitthi.document.model.DocumentStatus;
 import com.chitthi.document.model.Page;
@@ -20,6 +21,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -31,8 +34,13 @@ class DocumentRetryServiceTest {
     private final PageRepository pageRepository = mock(PageRepository.class);
     private final OutboxService outboxService = mock(OutboxService.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final WordBudgetService wordBudgetService = mock(WordBudgetService.class);
     private final DocumentRetryService retryService =
-            new DocumentRetryService(documentRepository, pageRepository, outboxService, eventPublisher);
+            new DocumentRetryService(documentRepository, pageRepository, outboxService, eventPublisher, wordBudgetService);
+
+    DocumentRetryServiceTest() {
+        when(wordBudgetService.tryClaim(anyString(), anyInt())).thenReturn(true);
+    }
 
     @Test
     void aFailedPageWithNoTranslationGoesBackToOcrDoneAndQueuesTranslation() {
@@ -103,6 +111,45 @@ class DocumentRetryServiceTest {
         assertThat(result.requeued()).isZero();
         assertThat(result.skipped()).isZero();
         verify(outboxService, never()).enqueue(any(), any());
+    }
+
+    @Test
+    void aCappedPageIsRequeuedOnceBudgetFreesUp() {
+        UUID documentId = UUID.randomUUID();
+        Document document = new Document("owner", "title", "hi", null, null);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        Page page = new Page(documentId, 1, "k1");
+        page.setStatus(PageStatus.CAPPED);
+        page.setOriginalText("recovered text");
+        when(pageRepository.findByDocumentIdOrderByPageNo(documentId)).thenReturn(List.of(page));
+
+        DocumentRetryService.RetryResult result = retryService.retryFailedPages(documentId, "owner");
+
+        assertThat(result.requeued()).isEqualTo(1);
+        assertThat(result.skipped()).isZero();
+        assertThat(page.getStatus()).isEqualTo(PageStatus.OCR_DONE);
+        verify(outboxService).enqueue(PipelineQueues.TRANSLATE_QUEUE, new TranslateMessage(page.getId()));
+        assertThat(document.getStatus()).isEqualTo(DocumentStatus.PROCESSING);
+    }
+
+    @Test
+    void aCappedPageStaysCappedAndIsSkippedWhileBudgetIsStillSpent() {
+        UUID documentId = UUID.randomUUID();
+        Document document = new Document("owner", "title", "hi", null, null);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        Page page = new Page(documentId, 1, "k1");
+        page.setStatus(PageStatus.CAPPED);
+        page.setOriginalText("recovered text");
+        when(pageRepository.findByDocumentIdOrderByPageNo(documentId)).thenReturn(List.of(page));
+        when(wordBudgetService.tryClaim(anyString(), anyInt())).thenReturn(false);
+
+        DocumentRetryService.RetryResult result = retryService.retryFailedPages(documentId, "owner");
+
+        assertThat(result.requeued()).isZero();
+        assertThat(result.skipped()).isEqualTo(1);
+        assertThat(page.getStatus()).isEqualTo(PageStatus.CAPPED);
+        verify(outboxService, never()).enqueue(any(), any());
+        assertThat(document.getStatus()).isNotEqualTo(DocumentStatus.PROCESSING);
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.chitthi.document.service;
 
+import com.chitthi.cap.DailyWordCapExceededException;
+import com.chitthi.cap.WordBudgetService;
 import com.chitthi.document.model.Document;
 import com.chitthi.document.model.DocumentStatus;
 import com.chitthi.document.model.Page;
@@ -9,6 +11,7 @@ import com.chitthi.document.repository.PageRepository;
 import com.chitthi.messaging.PipelineQueues;
 import com.chitthi.messaging.outbox.OutboxService;
 import com.chitthi.progress.DocumentProgressEvent;
+import com.chitthi.text.WordCounter;
 import com.chitthi.translate.message.TranslateMessage;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -48,13 +51,16 @@ public class PageEditService {
     private final PageRepository pageRepository;
     private final OutboxService outboxService;
     private final ApplicationEventPublisher eventPublisher;
+    private final WordBudgetService wordBudgetService;
 
     public PageEditService(DocumentRepository documentRepository, PageRepository pageRepository,
-                            OutboxService outboxService, ApplicationEventPublisher eventPublisher) {
+                            OutboxService outboxService, ApplicationEventPublisher eventPublisher,
+                            WordBudgetService wordBudgetService) {
         this.documentRepository = documentRepository;
         this.pageRepository = pageRepository;
         this.outboxService = outboxService;
         this.eventPublisher = eventPublisher;
+        this.wordBudgetService = wordBudgetService;
     }
 
     @Transactional
@@ -82,12 +88,23 @@ public class PageEditService {
         }
 
         String newHash = TextHasher.sha256Hex(text);
-        if (page.getStatus() != PageStatus.FAILED && newHash.equals(page.getTextHash())) {
+        boolean neverRanDownstream = page.getStatus() == PageStatus.FAILED || page.getStatus() == PageStatus.CAPPED;
+        if (!neverRanDownstream && newHash.equals(page.getTextHash())) {
             // Unchanged text: no-op, so saving an edit dialog with nothing
             // actually changed doesn't re-run translation and audio for
-            // free. A FAILED page always proceeds even if the hash happens
-            // to match, since FAILED means nothing downstream has run yet.
+            // free (or spend budget) again. A FAILED or CAPPED page always
+            // proceeds even if the hash happens to match, since neither
+            // means anything downstream has run yet.
             return page;
+        }
+
+        // FR15: an edit re-runs translation and TTS, which is real new
+        // spend, so it claims budget exactly like a page's first OCR pass
+        // does - without this, repeatedly editing one page would be an
+        // unlimited way around the daily cap.
+        if (!wordBudgetService.tryClaim(document.getOwnerId(), WordCounter.count(text))) {
+            throw new DailyWordCapExceededException(wordBudgetService.resetAt(),
+                    wordBudgetService.usedWords(document.getOwnerId()), wordBudgetService.dailyLimit());
         }
 
         page.setOriginalText(text);

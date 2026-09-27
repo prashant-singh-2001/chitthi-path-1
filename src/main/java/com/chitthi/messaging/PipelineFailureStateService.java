@@ -40,7 +40,12 @@ public class PipelineFailureStateService {
     @Transactional
     public Optional<UUID> markPageFailed(UUID pageId) {
         return pageRepository.findById(pageId).map(page -> {
-            if (page.getStatus() != PageStatus.INDEXED) {
+            // CAPPED (FR15) is never actually reachable here - a capped page
+            // was never enqueued for translate/TTS in the first place, so no
+            // in-flight message naming it can ever exhaust retries - but the
+            // exemption is added anyway so this invariant doesn't silently
+            // depend on that reasoning holding forever.
+            if (page.getStatus() != PageStatus.INDEXED && page.getStatus() != PageStatus.CAPPED) {
                 page.setStatus(PageStatus.FAILED);
                 pageRepository.save(page);
                 outboxService.enqueue(PipelineQueues.ASSEMBLE_QUEUE, new AssembleMessage(page.getDocumentId()));

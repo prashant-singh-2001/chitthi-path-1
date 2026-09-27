@@ -1,5 +1,6 @@
 package com.chitthi.document.service;
 
+import com.chitthi.cap.WordBudgetService;
 import com.chitthi.document.model.Document;
 import com.chitthi.document.model.DocumentStatus;
 import com.chitthi.document.model.Page;
@@ -9,6 +10,7 @@ import com.chitthi.document.repository.PageRepository;
 import com.chitthi.messaging.PipelineQueues;
 import com.chitthi.messaging.outbox.OutboxService;
 import com.chitthi.progress.DocumentProgressEvent;
+import com.chitthi.text.WordCounter;
 import com.chitthi.translate.message.TranslateMessage;
 import com.chitthi.tts.message.TtsMessage;
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,12 +26,19 @@ import java.util.UUID;
  * that page's chunks are reused by {@link com.chitthi.translate.TranslateWorker}
  * / {@link com.chitthi.tts.TtsWorker} without a second paid call - only the
  * chunks that never finished actually re-run.
+ *
+ * <p>FR15: also re-queues CAPPED pages, re-claiming the owner's daily word
+ * budget on the way - this is the "resume tomorrow" path for a page that
+ * stopped because of the cap, with no new scheduler needed. A page still
+ * over budget stays CAPPED and counts as skipped, exactly like a page that
+ * never recovered any OCR text.
  */
 @Service
 public class DocumentRetryService {
 
-    /** A page whose {@code original_text} is null failed OCR at the batch level, not per-page - resubmitting its
-     * whole batch would re-pay for pages that already succeeded, so it's left for a future batch-level retry. */
+    /** A page counts as skipped either because its {@code original_text} is null (it failed OCR at the batch
+     * level, not per-page - resubmitting its whole batch would re-pay for pages that already succeeded, so it's
+     * left for a future batch-level retry) or because it is still CAPPED and the owner's budget is still spent. */
     public record RetryResult(int requeued, int skipped) {
     }
 
@@ -37,13 +46,16 @@ public class DocumentRetryService {
     private final PageRepository pageRepository;
     private final OutboxService outboxService;
     private final ApplicationEventPublisher eventPublisher;
+    private final WordBudgetService wordBudgetService;
 
     public DocumentRetryService(DocumentRepository documentRepository, PageRepository pageRepository,
-                                 OutboxService outboxService, ApplicationEventPublisher eventPublisher) {
+                                 OutboxService outboxService, ApplicationEventPublisher eventPublisher,
+                                 WordBudgetService wordBudgetService) {
         this.documentRepository = documentRepository;
         this.pageRepository = pageRepository;
         this.outboxService = outboxService;
         this.eventPublisher = eventPublisher;
+        this.wordBudgetService = wordBudgetService;
     }
 
     @Transactional
@@ -59,6 +71,16 @@ public class DocumentRetryService {
         int requeued = 0;
         int skipped = 0;
         for (Page page : pages) {
+            if (page.getStatus() == PageStatus.CAPPED) {
+                if (!wordBudgetService.tryClaim(document.getOwnerId(), WordCounter.count(page.getOriginalText()))) {
+                    skipped++;
+                    continue;
+                }
+                page.setStatus(PageStatus.OCR_DONE);
+                outboxService.enqueue(PipelineQueues.TRANSLATE_QUEUE, new TranslateMessage(page.getId()));
+                requeued++;
+                continue;
+            }
             if (page.getStatus() != PageStatus.FAILED) {
                 continue;
             }

@@ -1,5 +1,7 @@
 package com.chitthi.document;
 
+import com.chitthi.cap.DailyWordCapExceededException;
+import com.chitthi.cap.WordBudgetService;
 import com.chitthi.document.model.Document;
 import com.chitthi.document.model.DocumentStatus;
 import com.chitthi.document.model.Page;
@@ -23,6 +25,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -34,8 +38,13 @@ class PageEditServiceTest {
     private final PageRepository pageRepository = mock(PageRepository.class);
     private final OutboxService outboxService = mock(OutboxService.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+    private final WordBudgetService wordBudgetService = mock(WordBudgetService.class);
     private final PageEditService editService =
-            new PageEditService(documentRepository, pageRepository, outboxService, eventPublisher);
+            new PageEditService(documentRepository, pageRepository, outboxService, eventPublisher, wordBudgetService);
+
+    PageEditServiceTest() {
+        when(wordBudgetService.tryClaim(anyString(), anyInt())).thenReturn(true);
+    }
 
     @Test
     void anIndexedPageIsResetToOcrDoneAndTranslationIsEnqueued() {
@@ -155,6 +164,41 @@ class PageEditServiceTest {
         assertThatThrownBy(() -> editService.editText(documentId, 1, "text", "owner-b"))
                 .isInstanceOf(DocumentNotFoundException.class);
         verify(pageRepository, never()).findByDocumentIdAndPageNo(any(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void editingOverBudgetIsRejected() {
+        UUID documentId = UUID.randomUUID();
+        Document document = new Document("owner", "title", "hi", null, null);
+        Page page = new Page(documentId, 1, "k1");
+        page.setStatus(PageStatus.INDEXED);
+        page.setOriginalText("existing");
+        page.setTextHash(com.chitthi.document.service.TextHasher.sha256Hex("existing"));
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(pageRepository.findByDocumentIdAndPageNo(documentId, 1)).thenReturn(Optional.of(page));
+        when(wordBudgetService.tryClaim(anyString(), anyInt())).thenReturn(false);
+
+        assertThatThrownBy(() -> editService.editText(documentId, 1, "new text", "owner"))
+                .isInstanceOf(DailyWordCapExceededException.class);
+        verify(pageRepository, never()).save(any());
+        verify(outboxService, never()).enqueue(any(), any());
+    }
+
+    @Test
+    void aCappedPageWithUnchangedTextIsNotTreatedAsANoOp() {
+        UUID documentId = UUID.randomUUID();
+        Document document = new Document("owner", "title", "hi", null, null);
+        Page page = new Page(documentId, 1, "k1");
+        page.setStatus(PageStatus.CAPPED);
+        page.setOriginalText("same text");
+        page.setTextHash(com.chitthi.document.service.TextHasher.sha256Hex("same text"));
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(pageRepository.findByDocumentIdAndPageNo(documentId, 1)).thenReturn(Optional.of(page));
+
+        Page result = editService.editText(documentId, 1, "same text", "owner");
+
+        assertThat(result.getStatus()).isEqualTo(PageStatus.OCR_DONE);
+        verify(outboxService).enqueue(PipelineQueues.TRANSLATE_QUEUE, new TranslateMessage(page.getId()));
     }
 
     @Test
