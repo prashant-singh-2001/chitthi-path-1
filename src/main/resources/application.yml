@@ -53,6 +53,14 @@ minio:
   region: us-east-1
 
 chitthi:
+  security:
+    # FR14: unset in production, so only Google sign-in works there. Set to
+    # any string locally (and in every test) to authenticate every request
+    # as that user with no real login - see DevUserAuthenticationFilter.
+    # An X-User-Id header overrides this per-request, which only matters
+    # because dev-user is set at all; with it unset, that header is never
+    # read by anything.
+    dev-user: ${CHITTHI_DEV_USER:}
   ocr:
     worker:
       enabled: true

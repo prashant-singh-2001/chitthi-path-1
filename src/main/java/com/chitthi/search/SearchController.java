@@ -1,7 +1,7 @@
 package com.chitthi.search;
 
+import com.chitthi.security.CurrentUser;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -9,24 +9,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class SearchController {
 
-    // TODO(FR14): replace with the authenticated principal once Google
-    // OAuth sign-in lands - matches DocumentController's DEFAULT_OWNER_ID
-    // stopgap until then.
-    private static final String DEFAULT_OWNER_ID = "demo-user";
-
     private final SearchService searchService;
+    private final CurrentUser currentUser;
 
-    public SearchController(SearchService searchService) {
+    public SearchController(SearchService searchService, CurrentUser currentUser) {
         this.searchService = searchService;
+        this.currentUser = currentUser;
     }
 
     @GetMapping("/api/search")
     public SearchResponse search(@RequestParam String q,
                                   @RequestParam(required = false) String tag,
                                   @RequestParam(required = false) Integer year,
-                                  @RequestParam(required = false) Integer limit,
-                                  @RequestHeader(value = "X-User-Id", required = false) String userId) {
-        String owner = userId != null ? userId : DEFAULT_OWNER_ID;
-        return searchService.search(owner, q, tag, year, limit);
+                                  @RequestParam(required = false) Integer limit) {
+        return searchService.search(currentUser.ownerId(), q, tag, year, limit);
     }
 }

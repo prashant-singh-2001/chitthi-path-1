@@ -47,9 +47,13 @@ public class DocumentRetryService {
     }
 
     @Transactional
-    public RetryResult retryFailedPages(UUID documentId) {
+    public RetryResult retryFailedPages(UUID documentId, String ownerId) {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        if (!document.getOwnerId().equals(ownerId)) {
+            // FR14: 404, not 403 - see PageEditService.editText's identical check.
+            throw new DocumentNotFoundException(documentId);
+        }
         List<Page> pages = pageRepository.findByDocumentIdOrderByPageNo(documentId);
 
         int requeued = 0;

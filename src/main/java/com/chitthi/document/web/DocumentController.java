@@ -14,6 +14,7 @@ import com.chitthi.progress.ProgressProperties;
 import com.chitthi.progress.ProgressSnapshot;
 import com.chitthi.progress.ProgressSnapshotService;
 import com.chitthi.progress.SseEmitterRegistry;
+import com.chitthi.security.CurrentUser;
 import com.chitthi.storage.ObjectStorageService;
 import com.chitthi.usage.UsageQueryService;
 import com.chitthi.usage.web.DocumentUsageView;
@@ -27,7 +28,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,9 +45,6 @@ import java.util.UUID;
 @RequestMapping("/api/documents")
 public class DocumentController {
 
-    // TODO(FR14): replace with the authenticated principal once Google
-    // OAuth sign-in lands; every document is scoped to this ownerId until then.
-    private static final String DEFAULT_OWNER_ID = "demo-user";
     private static final Set<String> VALID_AUDIO_LANGUAGES = Set.of("orig", "en");
 
     private static final Logger log = LoggerFactory.getLogger(DocumentController.class);
@@ -63,6 +60,7 @@ public class DocumentController {
     private final DocumentRetryService retryService;
     private final PageEditService pageEditService;
     private final UsageQueryService usageQueryService;
+    private final CurrentUser currentUser;
 
     public DocumentController(DocumentUploadService uploadService,
                                DocumentRepository documentRepository,
@@ -74,7 +72,8 @@ public class DocumentController {
                                ProgressProperties progressProperties,
                                DocumentRetryService retryService,
                                PageEditService pageEditService,
-                               UsageQueryService usageQueryService) {
+                               UsageQueryService usageQueryService,
+                               CurrentUser currentUser) {
         this.uploadService = uploadService;
         this.documentRepository = documentRepository;
         this.pageRepository = pageRepository;
@@ -86,6 +85,7 @@ public class DocumentController {
         this.retryService = retryService;
         this.pageEditService = pageEditService;
         this.usageQueryService = usageQueryService;
+        this.currentUser = currentUser;
     }
 
     @PostMapping
@@ -94,18 +94,15 @@ public class DocumentController {
             @RequestParam("title") String title,
             @RequestParam("language") String language,
             @RequestParam(value = "tags", required = false) List<String> tags,
-            @RequestParam(value = "year", required = false) Integer year,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            @RequestParam(value = "year", required = false) Integer year) {
 
-        String ownerId = userId != null ? userId : DEFAULT_OWNER_ID;
-        Document document = uploadService.upload(ownerId, title, language, tags, year, files);
+        Document document = uploadService.upload(currentUser.ownerId(), title, language, tags, year, files);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(new DocumentUploadResponse(document.getId()));
     }
 
     @GetMapping("/{id}")
     public DocumentView get(@PathVariable UUID id) {
-        Document document = documentRepository.findById(id)
-                .orElseThrow(() -> new DocumentNotFoundException(id));
+        Document document = requireOwnedDocument(id);
         return DocumentView.from(document, pageRepository.findByDocumentIdOrderByPageNo(id));
     }
 
@@ -119,9 +116,7 @@ public class DocumentController {
         if (!VALID_AUDIO_LANGUAGES.contains(lang)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lang must be 'orig' or 'en'");
         }
-        if (!documentRepository.existsById(id)) {
-            throw new DocumentNotFoundException(id);
-        }
+        requireOwnedDocument(id);
 
         String key = "documents/%s/audio/%s.wav".formatted(id, lang);
         boolean fallback = false;
@@ -150,6 +145,7 @@ public class DocumentController {
      */
     @GetMapping(value = "/{id}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter events(@PathVariable UUID id) {
+        requireOwnedDocument(id);
         ProgressSnapshot snapshot = snapshotService.load(id).orElseThrow(() -> new DocumentNotFoundException(id));
 
         SseEmitter emitter = emitterRegistry.register(id, progressProperties.emitterTimeout().toMillis());
@@ -168,7 +164,7 @@ public class DocumentController {
     /** FR7's manual retry: re-queues every FAILED page. See {@link DocumentRetryService}. */
     @PostMapping("/{id}/retry")
     public ResponseEntity<RetryResponse> retry(@PathVariable UUID id) {
-        DocumentRetryService.RetryResult result = retryService.retryFailedPages(id);
+        DocumentRetryService.RetryResult result = retryService.retryFailedPages(id, currentUser.ownerId());
         return ResponseEntity.accepted().body(new RetryResponse(result.requeued(), result.skipped()));
     }
 
@@ -176,16 +172,26 @@ public class DocumentController {
     @PutMapping("/{id}/pages/{pageNo}/text")
     public ResponseEntity<PageView> editPageText(@PathVariable("id") UUID id, @PathVariable int pageNo,
                                                   @RequestBody PageTextEditRequest request) {
-        Page page = pageEditService.editText(id, pageNo, request.text());
+        Page page = pageEditService.editText(id, pageNo, request.text(), currentUser.ownerId());
         return ResponseEntity.accepted().body(PageView.from(page));
     }
 
     /** FR10: per-document cost and latency, broken down by Sarvam endpoint. See {@link UsageQueryService}. */
     @GetMapping("/{id}/usage")
     public DocumentUsageView usage(@PathVariable UUID id) {
-        if (!documentRepository.existsById(id)) {
+        requireOwnedDocument(id);
+        return usageQueryService.documentUsage(id);
+    }
+
+    /**
+     * FR14: 404, not 403, for a document another user owns - a response
+     * must never confirm that a guessed id actually exists.
+     */
+    private Document requireOwnedDocument(UUID id) {
+        Document document = documentRepository.findById(id).orElseThrow(() -> new DocumentNotFoundException(id));
+        if (!document.getOwnerId().equals(currentUser.ownerId())) {
             throw new DocumentNotFoundException(id);
         }
-        return usageQueryService.documentUsage(id);
+        return document;
     }
 }

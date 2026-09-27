@@ -1,6 +1,7 @@
 package com.chitthi.document;
 
 import com.chitthi.audio.AudioProperties;
+import com.chitthi.document.model.Document;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
 import com.chitthi.document.service.DocumentNotFoundException;
@@ -10,10 +11,12 @@ import com.chitthi.document.web.DocumentController;
 import com.chitthi.progress.ProgressProperties;
 import com.chitthi.progress.ProgressSnapshotService;
 import com.chitthi.progress.SseEmitterRegistry;
+import com.chitthi.security.CurrentUser;
 import com.chitthi.storage.ObjectStorageService;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +25,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class DocumentControllerAudioTest {
+
+    private static final String OWNER = "owner";
 
     private final DocumentUploadService uploadService = mock(DocumentUploadService.class);
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
@@ -34,9 +39,19 @@ class DocumentControllerAudioTest {
     private final com.chitthi.document.service.DocumentRetryService retryService = mock(com.chitthi.document.service.DocumentRetryService.class);
     private final com.chitthi.document.service.PageEditService pageEditService = mock(com.chitthi.document.service.PageEditService.class);
     private final com.chitthi.usage.UsageQueryService usageQueryService = mock(com.chitthi.usage.UsageQueryService.class);
+    private final CurrentUser currentUser = mock(CurrentUser.class);
     private final DocumentController controller = new DocumentController(
             uploadService, documentRepository, pageRepository, storageService, audioProperties,
-            emitterRegistry, snapshotService, progressProperties, retryService, pageEditService, usageQueryService);
+            emitterRegistry, snapshotService, progressProperties, retryService, pageEditService, usageQueryService,
+            currentUser);
+
+    {
+        when(currentUser.ownerId()).thenReturn(OWNER);
+    }
+
+    private Document ownedDocument() {
+        return new Document(OWNER, "title", "hi", null, null);
+    }
 
     @Test
     void rejectsAnUnknownLanguage() {
@@ -50,7 +65,16 @@ class DocumentControllerAudioTest {
     @Test
     void returns404ForAMissingDocument() {
         UUID id = UUID.randomUUID();
-        when(documentRepository.existsById(id)).thenReturn(false);
+        when(documentRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> controller.audio(id, "en"))
+                .isInstanceOf(DocumentNotFoundException.class);
+    }
+
+    @Test
+    void returns404ForAnotherOwnersDocument() {
+        UUID id = UUID.randomUUID();
+        when(documentRepository.findById(id)).thenReturn(Optional.of(new Document("someone-else", "t", "hi", null, null)));
 
         assertThatThrownBy(() -> controller.audio(id, "en"))
                 .isInstanceOf(DocumentNotFoundException.class);
@@ -59,7 +83,7 @@ class DocumentControllerAudioTest {
     @Test
     void returnsAPresignedUrlWhenTheTrackExists() {
         UUID id = UUID.randomUUID();
-        when(documentRepository.existsById(id)).thenReturn(true);
+        when(documentRepository.findById(id)).thenReturn(Optional.of(ownedDocument()));
         String key = "documents/%s/audio/en.wav".formatted(id);
         when(storageService.exists(key)).thenReturn(true);
         when(storageService.presignedGetUrl(key, Duration.ofMinutes(15))).thenReturn("https://minio/presigned");
@@ -73,7 +97,7 @@ class DocumentControllerAudioTest {
     @Test
     void fallsBackToEnglishWhenNoOriginalTrackExists() {
         UUID id = UUID.randomUUID();
-        when(documentRepository.existsById(id)).thenReturn(true);
+        when(documentRepository.findById(id)).thenReturn(Optional.of(ownedDocument()));
         String origKey = "documents/%s/audio/orig.wav".formatted(id);
         String enKey = "documents/%s/audio/en.wav".formatted(id);
         when(storageService.exists(origKey)).thenReturn(false);
@@ -89,7 +113,7 @@ class DocumentControllerAudioTest {
     @Test
     void returns404WhenNeitherOriginalNorEnglishTrackExists() {
         UUID id = UUID.randomUUID();
-        when(documentRepository.existsById(id)).thenReturn(true);
+        when(documentRepository.findById(id)).thenReturn(Optional.of(ownedDocument()));
         when(storageService.exists(org.mockito.ArgumentMatchers.anyString())).thenReturn(false);
 
         assertThatThrownBy(() -> controller.audio(id, "orig"))
@@ -100,7 +124,7 @@ class DocumentControllerAudioTest {
     @Test
     void returns404ForEnglishWhenItDoesNotExistWithNoFallback() {
         UUID id = UUID.randomUUID();
-        when(documentRepository.existsById(id)).thenReturn(true);
+        when(documentRepository.findById(id)).thenReturn(Optional.of(ownedDocument()));
         when(storageService.exists(org.mockito.ArgumentMatchers.anyString())).thenReturn(false);
 
         assertThatThrownBy(() -> controller.audio(id, "en"))

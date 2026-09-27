@@ -41,7 +41,12 @@ import static org.assertj.core.api.Assertions.assertThat;
         "chitthi.ocr.poller.enabled=false",
         "chitthi.translate.worker.enabled=false",
         "chitthi.tts.worker.enabled=false",
-        "chitthi.assemble.worker.enabled=false"
+        "chitthi.assemble.worker.enabled=false",
+        // Every call in this test overrides this via X-User-Id (see
+        // DevUserAuthenticationFilter), so the actual value here never
+        // matters - it only needs to be set at all for /api/** to be
+        // reachable.
+        "chitthi.security.dev-user=search-default"
 })
 class SearchIntegrationTest {
 

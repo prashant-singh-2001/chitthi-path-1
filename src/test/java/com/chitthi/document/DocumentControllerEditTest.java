@@ -43,9 +43,11 @@ class DocumentControllerEditTest {
     private final DocumentRetryService retryService = mock(DocumentRetryService.class);
     private final PageEditService pageEditService = mock(PageEditService.class);
     private final com.chitthi.usage.UsageQueryService usageQueryService = mock(com.chitthi.usage.UsageQueryService.class);
+    private final com.chitthi.security.CurrentUser currentUser = mock(com.chitthi.security.CurrentUser.class);
     private final DocumentController controller = new DocumentController(
             uploadService, documentRepository, pageRepository, storageService, audioProperties,
-            emitterRegistry, snapshotService, progressProperties, retryService, pageEditService, usageQueryService);
+            emitterRegistry, snapshotService, progressProperties, retryService, pageEditService, usageQueryService,
+            currentUser);
 
     @Test
     void editPageText_returns202WithTheUpdatedPageView() {
@@ -53,7 +55,8 @@ class DocumentControllerEditTest {
         Page page = new Page(documentId, 2, "k2");
         page.setStatus(PageStatus.OCR_DONE);
         page.setOriginalText("corrected");
-        when(pageEditService.editText(documentId, 2, "corrected")).thenReturn(page);
+        when(currentUser.ownerId()).thenReturn("owner");
+        when(pageEditService.editText(documentId, 2, "corrected", "owner")).thenReturn(page);
 
         ResponseEntity<PageView> response = controller.editPageText(documentId, 2, new PageTextEditRequest("corrected"));
 
