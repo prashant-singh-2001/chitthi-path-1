@@ -45,15 +45,10 @@ import javax.sound.sampled.AudioSystem;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
@@ -224,30 +219,33 @@ class TranslateTtsPipelineIntegrationTest {
 
         UUID documentId = uploadOnePagePdf();
 
-        HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:%d/api/documents/%s/events".formatted(port, documentId)))
-                .timeout(Duration.ofSeconds(60))
-                .GET()
-                .build();
+        // Spring's own reactive WebClient, not the JDK's java.net.http.HttpClient:
+        // the latter has a known issue reading a slow, long-lived chunked
+        // response (https://bugs.openjdk.org/browse/JDK-8258397-shaped) that
+        // surfaced as a flaky "chunked transfer encoding" IOException here
+        // once adding Spring Security made every request marginally slower.
+        // WebClient's SSE decoding (over Reactor Netty) doesn't share that bug.
+        org.springframework.web.reactive.function.client.WebClient webClient =
+                org.springframework.web.reactive.function.client.WebClient.create("http://localhost:" + port);
+        java.util.List<org.springframework.http.codec.ServerSentEvent<String>> events = webClient.get()
+                .uri("/api/documents/{id}/events", documentId)
+                .retrieve()
+                .bodyToFlux(new org.springframework.core.ParameterizedTypeReference<org.springframework.http.codec.ServerSentEvent<String>>() {
+                })
+                // The stream ends on its own once the server-side emitter
+                // completes - collecting to a list and blocking until the
+                // Flux completes is exactly the assertion that the stream
+                // closes after the terminal snapshot, not just that one
+                // arrived.
+                .collectList()
+                .block(Duration.ofSeconds(60));
 
-        HttpResponse<Stream<String>> response = client.send(request, HttpResponse.BodyHandlers.ofLines());
-        assertThat(response.statusCode()).isEqualTo(200);
+        boolean sawComplete = events.stream()
+                .map(org.springframework.http.codec.ServerSentEvent::data)
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(data -> data.contains("\"status\":\"COMPLETE\""));
 
-        boolean[] sawComplete = {false};
-        try (Stream<String> lines = response.body()) {
-            // The stream ends on its own once the server-side emitter
-            // completes - iterating to exhaustion is exactly the assertion
-            // that the stream closes after the terminal snapshot, not just
-            // that one arrived.
-            lines.forEach(line -> {
-                if (line.startsWith("data:") && line.contains("\"status\":\"COMPLETE\"")) {
-                    sawComplete[0] = true;
-                }
-            });
-        }
-
-        assertThat(sawComplete[0]).isTrue();
+        assertThat(sawComplete).isTrue();
     }
 
     private void assertTrackHasExpectedFrameCount(UUID documentId, String track) throws IOException {
