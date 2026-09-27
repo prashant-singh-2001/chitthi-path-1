@@ -109,7 +109,13 @@ public class SecurityConfig {
                         .anyRequest().permitAll())
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfTokenRepository)
-                        .csrfTokenRequestHandler(csrfRequestHandler))
+                        .csrfTokenRequestHandler(csrfRequestHandler)
+                        // The SSE progress stream is GET-only (never a
+                        // state-changing method, so CSRF was never actually
+                        // protecting anything here) and long-lived; eager
+                        // per-request token saving broke its chunked
+                        // response entirely once Security was added.
+                        .ignoringRequestMatchers("/api/documents/*/events"))
                 .logout(logout -> logout.logoutUrl("/logout"))
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
                         // /api/** is the only authenticated matcher above, so
