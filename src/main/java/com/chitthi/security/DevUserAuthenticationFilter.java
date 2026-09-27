@@ -49,4 +49,19 @@ public class DevUserAuthenticationFilter extends OncePerRequestFilter {
                 new UsernamePasswordAuthenticationToken(effectiveUser, null, List.of()));
         chain.doFilter(request, response);
     }
+
+    /**
+     * {@code SecurityContextHolder} is a thread-local, and an async dispatch
+     * (the SSE progress stream's completion/timeout callbacks) resumes on a
+     * different thread than the one that handled the original request. Since
+     * this filter is the only thing that ever populates the context in dev
+     * mode - there is no session to restore it from - skipping it on the
+     * async re-dispatch (this base class's default) left that thread
+     * unauthenticated, which threw an {@code AuthenticationException} after
+     * the SSE response was already committed and killed the connection.
+     */
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
 }
