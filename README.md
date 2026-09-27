@@ -197,6 +197,48 @@ section for the full page state machine.
   - Found along the way: `ts_headline`'s snippet is the user's own
     uploaded text, unescaped — rendering it as HTML client-side would have
     been a stored-XSS vector. Snippets are plain text end to end instead.
+- **Day 11 (part 2 of 2):** Google sign-in and per-user scoping (FR14) —
+  one user never sees another's documents. (The daily word cap and
+  per-IP rate limits, FR15, are a separate stacked PR.)
+  - Every `/api/**` request now requires authentication; before this,
+    ownership came from a client-supplied `X-User-Id` header trusted
+    with no verification at all — a complete auth bypass. Google
+    OAuth2 login (`oauth2Login()`, session-based) is the real path,
+    active whenever `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` are set;
+    `CurrentUser` reads the signed-in owner from the OIDC `sub` claim.
+  - `chitthi.security.dev-user` is the local/test alternative to a real
+    Google OAuth client: set it and every request authenticates as that
+    user with no login flow, still honoring an `X-User-Id` override so
+    a test can act as several identities. Left unset (as production
+    must), the filter backing it is never even registered, so the
+    header is never read by anything — closing the bypass rather than
+    just hiding it behind a flag.
+  - `DocumentController`'s six document-scoped endpoints (`GET /{id}`,
+    `/audio`, `/events`, `POST /retry`, `PUT /pages/{n}/text`,
+    `/usage`) reject another owner's document with 404, not 403, so a
+    guessed id is never confirmed to exist; `PageEditService` and
+    `DocumentRetryService` repeat the check inside their own
+    transaction rather than trusting the controller alone. Search and
+    usage already filtered by owner in SQL and just switched from the
+    header to the authenticated principal.
+  - `GET /api/me` is the SPA's sign-in probe; the frontend shows a
+    "Sign in with Google" link when signed out and an account bar with
+    sign-out when signed in, sends the CSRF cookie's token on every
+    mutating call, and falls back to the signed-out view on any 401.
+  - `DocumentOwnershipIntegrationTest` is the FR14 acceptance test: one
+    user uploads, a second gets 404 from every document-scoped endpoint
+    and never sees the first user's document in search or usage.
+    `SecurityConfigTest` is the bypass regression test — with neither
+    dev-user nor Google configured (the production shape), a forged
+    `X-User-Id` header still gets 401.
+  - Found along the way: the SSE progress stream's completion callback
+    resumes on a different thread than the one that served the
+    original request, and `SecurityContextHolder` is a thread-local —
+    `OncePerRequestFilter` skips async re-dispatch by default, so that
+    thread was unauthenticated and threw once the document finished,
+    killing the connection after the response was already committed.
+    `DevUserAuthenticationFilter` now re-authenticates on async
+    dispatch too.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
@@ -266,6 +308,23 @@ for its own build and test commands.
 Set `SARVAM_API_KEY` before running against the real API. See
 `src/main/resources/application.yml` for pipeline tuning (chunk sizes,
 concurrency, rate limits) mirrored from Sarvam's documented limits.
+
+### Sign-in (FR14)
+
+`/api/**` requires authentication. Two ways in, and you need at least
+one to use the app at all:
+
+- **`chitthi.security.dev-user`** (env var `CHITTHI_DEV_USER`) — set it
+  to any string and every request authenticates as that user, no login
+  flow needed. This is what local dev and every test use. Never set
+  this in production: with it unset, the filter backing it isn't even
+  registered, so nothing reads the `X-User-Id` header it would
+  otherwise honor.
+- **Google sign-in** — set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+  (create an OAuth client in Google Cloud Console; redirect URI
+  `http://localhost:8080/login/oauth2/code/google` for local testing)
+  and visit `/oauth2/authorization/google`. This is the only path that
+  works once `chitthi.security.dev-user` is unset.
 
 ## Contributing
 

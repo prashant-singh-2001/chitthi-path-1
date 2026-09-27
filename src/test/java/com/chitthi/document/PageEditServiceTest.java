@@ -49,7 +49,7 @@ class PageEditServiceTest {
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(pageRepository.findByDocumentIdAndPageNo(documentId, 3)).thenReturn(Optional.of(page));
 
-        Page result = editService.editText(documentId, 3, "corrected text");
+        Page result = editService.editText(documentId, 3, "corrected text", "owner");
 
         assertThat(result.getStatus()).isEqualTo(PageStatus.OCR_DONE);
         assertThat(result.getOriginalText()).isEqualTo("corrected text");
@@ -71,7 +71,7 @@ class PageEditServiceTest {
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(pageRepository.findByDocumentIdAndPageNo(documentId, 1)).thenReturn(Optional.of(page));
 
-        Page result = editService.editText(documentId, 1, "same text");
+        Page result = editService.editText(documentId, 1, "same text", "owner");
 
         assertThat(result.getStatus()).isEqualTo(PageStatus.INDEXED);
         verify(pageRepository, never()).save(any());
@@ -88,7 +88,7 @@ class PageEditServiceTest {
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(pageRepository.findByDocumentIdAndPageNo(documentId, 1)).thenReturn(Optional.of(page));
 
-        assertThatThrownBy(() -> editService.editText(documentId, 1, "some text"))
+        assertThatThrownBy(() -> editService.editText(documentId, 1, "some text", "owner"))
                 .isInstanceOf(PageNotReadyException.class);
         verify(outboxService, never()).enqueue(any(), any());
     }
@@ -102,7 +102,7 @@ class PageEditServiceTest {
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(pageRepository.findByDocumentIdAndPageNo(documentId, 1)).thenReturn(Optional.of(page));
 
-        Page result = editService.editText(documentId, 1, "typed in by hand");
+        Page result = editService.editText(documentId, 1, "typed in by hand", "owner");
 
         assertThat(result.getStatus()).isEqualTo(PageStatus.OCR_DONE);
         assertThat(result.getOriginalText()).isEqualTo("typed in by hand");
@@ -119,7 +119,7 @@ class PageEditServiceTest {
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(pageRepository.findByDocumentIdAndPageNo(documentId, 1)).thenReturn(Optional.of(page));
 
-        assertThatThrownBy(() -> editService.editText(documentId, 1, "   "))
+        assertThatThrownBy(() -> editService.editText(documentId, 1, "   ", "owner"))
                 .isInstanceOf(InvalidPageTextException.class);
     }
 
@@ -133,7 +133,7 @@ class PageEditServiceTest {
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(pageRepository.findByDocumentIdAndPageNo(documentId, 1)).thenReturn(Optional.of(page));
 
-        assertThatThrownBy(() -> editService.editText(documentId, 1, "x".repeat(20_001)))
+        assertThatThrownBy(() -> editService.editText(documentId, 1, "x".repeat(20_001), "owner"))
                 .isInstanceOf(InvalidPageTextException.class);
     }
 
@@ -142,8 +142,19 @@ class PageEditServiceTest {
         UUID documentId = UUID.randomUUID();
         when(documentRepository.findById(documentId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> editService.editText(documentId, 1, "text"))
+        assertThatThrownBy(() -> editService.editText(documentId, 1, "text", "owner"))
                 .isInstanceOf(DocumentNotFoundException.class);
+    }
+
+    @Test
+    void editingAnotherOwnersPageIsRejectedAs404NotAsPermissionDenied() {
+        UUID documentId = UUID.randomUUID();
+        Document document = new Document("owner-a", "title", "hi", null, null);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> editService.editText(documentId, 1, "text", "owner-b"))
+                .isInstanceOf(DocumentNotFoundException.class);
+        verify(pageRepository, never()).findByDocumentIdAndPageNo(any(), org.mockito.ArgumentMatchers.anyInt());
     }
 
     @Test
@@ -153,7 +164,7 @@ class PageEditServiceTest {
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(pageRepository.findByDocumentIdAndPageNo(documentId, 99)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> editService.editText(documentId, 99, "text"))
+        assertThatThrownBy(() -> editService.editText(documentId, 99, "text", "owner"))
                 .isInstanceOf(PageNotFoundException.class);
     }
 }

@@ -58,9 +58,15 @@ public class PageEditService {
     }
 
     @Transactional
-    public Page editText(UUID documentId, int pageNo, String text) {
+    public Page editText(UUID documentId, int pageNo, String text, String ownerId) {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        if (!document.getOwnerId().equals(ownerId)) {
+            // FR14: 404, not 403 - the controller already checks this too,
+            // but the guarantee belongs at the service boundary, not only
+            // wherever happens to call it first.
+            throw new DocumentNotFoundException(documentId);
+        }
         Page page = pageRepository.findByDocumentIdAndPageNo(documentId, pageNo)
                 .orElseThrow(() -> new PageNotFoundException(documentId, pageNo));
 

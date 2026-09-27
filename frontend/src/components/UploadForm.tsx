@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { csrfToken, reportIfSessionExpired } from '../api/auth'
 import type { DocumentUploadResponse } from '../api/types'
 
 // Bulbul's 11 TTS-supported languages, matching SarvamLanguage.supportsTts
@@ -46,7 +47,12 @@ export function UploadForm({ onUploaded }: Props) {
     body.append('language', language)
 
     try {
-      const response = await fetch('/api/documents', { method: 'POST', body })
+      const response = await fetch('/api/documents', {
+        method: 'POST',
+        headers: { 'X-XSRF-TOKEN': csrfToken() ?? '' },
+        body,
+      })
+      reportIfSessionExpired(response)
       if (!response.ok) {
         const text = await response.text()
         throw new Error(text || `Upload failed (${response.status})`)

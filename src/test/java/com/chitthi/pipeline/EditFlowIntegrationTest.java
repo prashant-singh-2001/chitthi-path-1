@@ -78,7 +78,8 @@ import static org.awaitility.Awaitility.await;
         "chitthi.ocr.poll.initial-delay=200ms",
         "chitthi.ocr.poll.max-delay=500ms",
         "chitthi.ocr.poll.jitter-ratio=0",
-        "chitthi.outbox.relay-interval-ms=100"
+        "chitthi.outbox.relay-interval-ms=100",
+        "chitthi.security.dev-user=test-user"
 })
 class EditFlowIntegrationTest {
 
@@ -166,7 +167,7 @@ class EditFlowIntegrationTest {
 
         ResponseEntity<Object> editResponse = restTemplate.exchange(
                 "/api/documents/{id}/pages/{pageNo}/text", HttpMethod.PUT,
-                new HttpEntity<>(Map.of("text", "Page 3 EDITED text")), Object.class,
+                com.chitthi.support.TestAuth.jsonWithCsrf(Map.of("text", "Page 3 EDITED text"), restTemplate), Object.class,
                 documentId, 3);
         assertThat(editResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
 
@@ -206,7 +207,7 @@ class EditFlowIntegrationTest {
 
         ResponseEntity<Object> revertResponse = restTemplate.exchange(
                 "/api/documents/{id}/pages/{pageNo}/text", HttpMethod.PUT,
-                new HttpEntity<>(Map.of("text", "Page 3 text")), Object.class,
+                com.chitthi.support.TestAuth.jsonWithCsrf(Map.of("text", "Page 3 text"), restTemplate), Object.class,
                 documentId, 3);
         assertThat(revertResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
 
@@ -229,7 +230,7 @@ class EditFlowIntegrationTest {
 
         ResponseEntity<Object> response = restTemplate.exchange(
                 "/api/documents/{id}/pages/{pageNo}/text", HttpMethod.PUT,
-                new HttpEntity<>(Map.of("text", "too soon")), Object.class,
+                com.chitthi.support.TestAuth.jsonWithCsrf(Map.of("text", "too soon"), restTemplate), Object.class,
                 documentId, 1);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
@@ -239,7 +240,7 @@ class EditFlowIntegrationTest {
     void editingAMissingDocumentIsRejectedWith404() {
         ResponseEntity<Object> response = restTemplate.exchange(
                 "/api/documents/{id}/pages/{pageNo}/text", HttpMethod.PUT,
-                new HttpEntity<>(Map.of("text", "text")), Object.class,
+                com.chitthi.support.TestAuth.jsonWithCsrf(Map.of("text", "text"), restTemplate), Object.class,
                 UUID.randomUUID(), 1);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -274,6 +275,7 @@ class EditFlowIntegrationTest {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        com.chitthi.support.TestAuth.addCsrf(headers, restTemplate);
         HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
 
         ResponseEntity<DocumentUploadResponse> response = restTemplate.postForEntity(

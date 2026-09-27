@@ -68,7 +68,8 @@ import static org.awaitility.Awaitility.await;
         "chitthi.ocr.poll.initial-delay=200ms",
         "chitthi.ocr.poll.max-delay=500ms",
         "chitthi.ocr.poll.jitter-ratio=0",
-        "chitthi.outbox.relay-interval-ms=100"
+        "chitthi.outbox.relay-interval-ms=100",
+        "chitthi.security.dev-user=test-user"
 })
 class UsageLedgerIntegrationTest {
 
@@ -201,6 +202,7 @@ class UsageLedgerIntegrationTest {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        com.chitthi.support.TestAuth.addCsrf(headers, restTemplate);
         HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
 
         ResponseEntity<DocumentUploadResponse> response = restTemplate.postForEntity(

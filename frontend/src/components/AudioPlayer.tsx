@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { reportIfSessionExpired } from '../api/auth'
 import type { AudioUrlResponse } from '../api/types'
 
 type Lang = 'orig' | 'en'
@@ -28,6 +29,7 @@ export function AudioPlayer({ documentId }: Props) {
     async function loadTrack(lang: Lang) {
       try {
         const response = await fetch(`/api/documents/${documentId}/audio?lang=${lang}`)
+        reportIfSessionExpired(response)
         if (response.status === 404) {
           if (!cancelled) markMissing(lang)
           return

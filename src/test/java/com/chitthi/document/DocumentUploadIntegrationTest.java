@@ -53,8 +53,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * client speaks the generic S3 API rather than anything MinIO-specific.
  */
 @Testcontainers
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "chitthi.ocr.worker.enabled=false")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+        "chitthi.ocr.worker.enabled=false",
+        "chitthi.security.dev-user=test-user"
+})
 class DocumentUploadIntegrationTest {
 
     @Container
@@ -109,6 +111,7 @@ class DocumentUploadIntegrationTest {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        com.chitthi.support.TestAuth.addCsrf(headers, restTemplate);
         HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
 
         ResponseEntity<DocumentUploadResponse> uploadResponse = restTemplate.postForEntity(

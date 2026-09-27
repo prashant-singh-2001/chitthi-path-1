@@ -1,6 +1,7 @@
 package com.chitthi.document;
 
 import com.chitthi.audio.AudioProperties;
+import com.chitthi.document.model.Document;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
 import com.chitthi.document.service.DocumentNotFoundException;
@@ -10,6 +11,7 @@ import com.chitthi.progress.ProgressProperties;
 import com.chitthi.progress.ProgressSnapshot;
 import com.chitthi.progress.ProgressSnapshotService;
 import com.chitthi.progress.SseEmitterRegistry;
+import com.chitthi.security.CurrentUser;
 import com.chitthi.storage.ObjectStorageService;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -26,6 +28,8 @@ import static org.mockito.Mockito.when;
 
 class DocumentControllerEventsTest {
 
+    private static final String OWNER = "owner";
+
     private final DocumentUploadService uploadService = mock(DocumentUploadService.class);
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
     private final PageRepository pageRepository = mock(PageRepository.class);
@@ -37,14 +41,20 @@ class DocumentControllerEventsTest {
     private final com.chitthi.document.service.DocumentRetryService retryService = mock(com.chitthi.document.service.DocumentRetryService.class);
     private final com.chitthi.document.service.PageEditService pageEditService = mock(com.chitthi.document.service.PageEditService.class);
     private final com.chitthi.usage.UsageQueryService usageQueryService = mock(com.chitthi.usage.UsageQueryService.class);
+    private final CurrentUser currentUser = mock(CurrentUser.class);
     private final DocumentController controller = new DocumentController(
             uploadService, documentRepository, pageRepository, storageService, audioProperties,
-            emitterRegistry, snapshotService, progressProperties, retryService, pageEditService, usageQueryService);
+            emitterRegistry, snapshotService, progressProperties, retryService, pageEditService, usageQueryService,
+            currentUser);
+
+    {
+        when(currentUser.ownerId()).thenReturn(OWNER);
+    }
 
     @Test
     void throws404WhenTheDocumentDoesNotExist() {
         UUID id = UUID.randomUUID();
-        when(snapshotService.load(id)).thenReturn(Optional.empty());
+        when(documentRepository.findById(id)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> controller.events(id)).isInstanceOf(DocumentNotFoundException.class);
     }
@@ -52,6 +62,7 @@ class DocumentControllerEventsTest {
     @Test
     void registersAndSendsTheInitialSnapshotForAnInFlightDocument() {
         UUID id = UUID.randomUUID();
+        when(documentRepository.findById(id)).thenReturn(Optional.of(new Document(OWNER, "t", "hi", null, null)));
         ProgressSnapshot snapshot = new ProgressSnapshot(id, "PROCESSING", List.of());
         when(snapshotService.load(id)).thenReturn(Optional.of(snapshot));
 
@@ -64,6 +75,7 @@ class DocumentControllerEventsTest {
     @Test
     void completesImmediatelyForAnAlreadyTerminalDocument() {
         UUID id = UUID.randomUUID();
+        when(documentRepository.findById(id)).thenReturn(Optional.of(new Document(OWNER, "t", "hi", null, null)));
         ProgressSnapshot snapshot = new ProgressSnapshot(id, "COMPLETE", List.of());
         when(snapshotService.load(id)).thenReturn(Optional.of(snapshot));
 

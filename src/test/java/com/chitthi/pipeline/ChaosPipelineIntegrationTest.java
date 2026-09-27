@@ -87,7 +87,8 @@ import static org.awaitility.Awaitility.await;
         "chitthi.ocr.poll.max-delay=500ms",
         "chitthi.ocr.poll.jitter-ratio=0",
         "chitthi.outbox.relay-interval-ms=100",
-        "chitthi.retry.delays=500ms,1s"
+        "chitthi.retry.delays=500ms,1s",
+        "chitthi.security.dev-user=test-user"
 })
 class ChaosPipelineIntegrationTest {
 
@@ -204,7 +205,7 @@ class ChaosPipelineIntegrationTest {
         stubTextToSpeech();
 
         ResponseEntity<Object> retryResponse = restTemplate.postForEntity(
-                "/api/documents/{id}/retry", null, Object.class, documentId);
+                "/api/documents/{id}/retry", com.chitthi.support.TestAuth.emptyWithCsrf(restTemplate), Object.class, documentId);
         assertThat(retryResponse.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
 
         await().atMost(Duration.ofSeconds(45)).pollInterval(Duration.ofMillis(200)).untilAsserted(() -> {
@@ -235,6 +236,7 @@ class ChaosPipelineIntegrationTest {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        com.chitthi.support.TestAuth.addCsrf(headers, restTemplate);
         HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
 
         ResponseEntity<DocumentUploadResponse> response = restTemplate.postForEntity(

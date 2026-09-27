@@ -44,7 +44,7 @@ class DocumentRetryServiceTest {
         page.setOriginalText("recovered text");
         when(pageRepository.findByDocumentIdOrderByPageNo(documentId)).thenReturn(List.of(page));
 
-        DocumentRetryService.RetryResult result = retryService.retryFailedPages(documentId);
+        DocumentRetryService.RetryResult result = retryService.retryFailedPages(documentId, "owner");
 
         assertThat(result.requeued()).isEqualTo(1);
         assertThat(result.skipped()).isZero();
@@ -64,7 +64,7 @@ class DocumentRetryServiceTest {
         page.setTranslatedText("translated");
         when(pageRepository.findByDocumentIdOrderByPageNo(documentId)).thenReturn(List.of(page));
 
-        DocumentRetryService.RetryResult result = retryService.retryFailedPages(documentId);
+        DocumentRetryService.RetryResult result = retryService.retryFailedPages(documentId, "owner");
 
         assertThat(result.requeued()).isEqualTo(1);
         assertThat(page.getStatus()).isEqualTo(PageStatus.TRANSLATED);
@@ -80,7 +80,7 @@ class DocumentRetryServiceTest {
         page.setStatus(PageStatus.FAILED);
         when(pageRepository.findByDocumentIdOrderByPageNo(documentId)).thenReturn(List.of(page));
 
-        DocumentRetryService.RetryResult result = retryService.retryFailedPages(documentId);
+        DocumentRetryService.RetryResult result = retryService.retryFailedPages(documentId, "owner");
 
         assertThat(result.requeued()).isZero();
         assertThat(result.skipped()).isEqualTo(1);
@@ -98,10 +98,21 @@ class DocumentRetryServiceTest {
         indexed.setStatus(PageStatus.INDEXED);
         when(pageRepository.findByDocumentIdOrderByPageNo(documentId)).thenReturn(List.of(indexed));
 
-        DocumentRetryService.RetryResult result = retryService.retryFailedPages(documentId);
+        DocumentRetryService.RetryResult result = retryService.retryFailedPages(documentId, "owner");
 
         assertThat(result.requeued()).isZero();
         assertThat(result.skipped()).isZero();
         verify(outboxService, never()).enqueue(any(), any());
+    }
+
+    @Test
+    void retryingAnotherOwnersDocumentIsRejectedAs404NotAsPermissionDenied() {
+        UUID documentId = UUID.randomUUID();
+        Document document = new Document("owner-a", "title", "hi", null, null);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> retryService.retryFailedPages(documentId, "owner-b"))
+                .isInstanceOf(com.chitthi.document.service.DocumentNotFoundException.class);
+        verify(pageRepository, never()).findByDocumentIdOrderByPageNo(any());
     }
 }

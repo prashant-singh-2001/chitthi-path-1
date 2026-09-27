@@ -151,3 +151,25 @@ button {
 .audio-track audio {
   width: 100%;
 }
+
+.account-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.account-bar h1 {
+  margin-bottom: 0;
+}
+
+.account-bar p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.account-bar button {
+  padding: 2px 8px;
+  font-size: 13px;
+}
