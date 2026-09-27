@@ -1,7 +1,6 @@
 package com.chitthi.security;
 
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,13 +24,16 @@ import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
  * {@code DocumentController} and friends, via {@link CurrentUser}).
  *
  * <p>Google sign-in only activates when both {@code GOOGLE_CLIENT_ID} and
- * {@code GOOGLE_CLIENT_SECRET} env vars are set - see {@link
- * #clientRegistrationRepository} for why those are read directly rather than
- * bound as a {@code spring.security.oauth2.client.registration.google.*}
- * property. Checked here via {@link ClientRegistrationRepository}'s
- * availability rather than assumed, so a local run with no Google
- * credentials still starts instead of failing on a missing bean. {@link
- * DevUserAuthenticationFilter} is the other way in, gated on {@code
+ * {@code GOOGLE_CLIENT_SECRET} env vars are set - see {@link #googleConfigured}
+ * for why those are read directly rather than bound as a {@code
+ * spring.security.oauth2.client.registration.google.*} property, and why
+ * {@link #clientRegistrationRepository} must exist (even if empty) either
+ * way: merely having {@code spring-boot-starter-oauth2-client} on the
+ * classpath makes Boot wire supporting MVC infrastructure that requires a
+ * {@code ClientRegistrationRepository} bean regardless of whether {@code
+ * oauth2Login()} was actually enabled below - a local run with no Google
+ * credentials would otherwise fail to start on a missing bean.
+ * {@link DevUserAuthenticationFilter} is the other way in, gated on {@code
  * chitthi.security.dev-user} and never registered without it.
  */
 @Configuration
@@ -41,24 +43,28 @@ public class SecurityConfig {
     @Value("${chitthi.security.dev-user:}")
     private String devUser;
 
+    private boolean googleConfigured(Environment environment) {
+        String clientId = environment.getProperty("GOOGLE_CLIENT_ID");
+        String clientSecret = environment.getProperty("GOOGLE_CLIENT_SECRET");
+        return clientId != null && !clientId.isBlank() && clientSecret != null && !clientSecret.isBlank();
+    }
+
     /**
      * Deliberately not a {@code spring.security.oauth2.client.registration
      * .google.*} YAML property: binding {@code client-id: ${GOOGLE_CLIENT_ID:}}
      * would still create a "google" registration entry with an empty
      * client id when the env var is unset, and {@code ClientRegistration}'s
-     * own builder rejects that at startup - breaking every local run and
-     * every test. Reading the two env vars directly and returning {@code
-     * null} when either is missing means no registration - and no bean -
-     * exists at all, which {@link #filterChain}'s {@code ObjectProvider}
-     * check treats the same as "Google isn't configured".
+     * own builder rejects that at startup. This bean must exist either way
+     * (see the class Javadoc), so when Google isn't configured it's a
+     * repository with zero registrations rather than a missing bean.
      */
     @Bean
     public ClientRegistrationRepository clientRegistrationRepository(Environment environment) {
+        if (!googleConfigured(environment)) {
+            return registrationId -> null;
+        }
         String clientId = environment.getProperty("GOOGLE_CLIENT_ID");
         String clientSecret = environment.getProperty("GOOGLE_CLIENT_SECRET");
-        if (clientId == null || clientId.isBlank() || clientSecret == null || clientSecret.isBlank()) {
-            return null;
-        }
         // Google's own long-standing, documented OIDC endpoints - the same
         // ones Spring Security's now-removed CommonOAuth2Provider.GOOGLE
         // used to fill in automatically.
@@ -81,9 +87,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http,
-                                            ObjectProvider<ClientRegistrationRepository> clientRegistrations)
-            throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, Environment environment) throws Exception {
         CookieCsrfTokenRepository csrfTokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         // Spring Security 6's CSRF-BREACH-protection default only writes the
         // cookie lazily, as a request attribute, unless the request
@@ -115,7 +119,7 @@ public class SecurityConfig {
                         // redirect-to-Google landing on a JSON fetch.
                         (request, response, authException) -> response.sendError(HttpServletResponse.SC_UNAUTHORIZED)));
 
-        if (clientRegistrations.getIfAvailable() != null) {
+        if (googleConfigured(environment)) {
             http.oauth2Login(oauth2 -> {
             });
         }
