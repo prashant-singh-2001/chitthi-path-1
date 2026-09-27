@@ -1,5 +1,7 @@
 package com.chitthi.document.service;
 
+import com.chitthi.cap.DailyWordCapExceededException;
+import com.chitthi.cap.WordBudgetService;
 import com.chitthi.document.model.Document;
 import com.chitthi.document.model.Page;
 import com.chitthi.document.repository.DocumentRepository;
@@ -49,15 +51,18 @@ public class DocumentUploadService {
     private final DocumentPersistenceService persistenceService;
     private final ObjectStorageService storageService;
     private final PdfPageSplitter pdfPageSplitter;
+    private final WordBudgetService wordBudgetService;
 
     public DocumentUploadService(DocumentRepository documentRepository,
                                   DocumentPersistenceService persistenceService,
                                   ObjectStorageService storageService,
-                                  PdfPageSplitter pdfPageSplitter) {
+                                  PdfPageSplitter pdfPageSplitter,
+                                  WordBudgetService wordBudgetService) {
         this.documentRepository = documentRepository;
         this.persistenceService = persistenceService;
         this.storageService = storageService;
         this.pdfPageSplitter = pdfPageSplitter;
+        this.wordBudgetService = wordBudgetService;
     }
 
     public Document upload(String ownerId, String title, String language,
@@ -73,6 +78,14 @@ public class DocumentUploadService {
                 throw new UploadValidationException(
                         "File '%s' exceeds the 20 MB limit".formatted(file.getOriginalFilename()));
             }
+        }
+        // FR15: word count is only knowable after OCR, so the upload-time
+        // rule is the requirement's own - reject once the budget is already
+        // spent, before paying to render and store a document that would
+        // just sit CAPPED from its very first page.
+        if (wordBudgetService.remainingWords(ownerId) <= 0) {
+            throw new DailyWordCapExceededException(wordBudgetService.resetAt(),
+                    wordBudgetService.usedWords(ownerId), wordBudgetService.dailyLimit());
         }
 
         List<PageImage> pageImages = toPageImages(files);
