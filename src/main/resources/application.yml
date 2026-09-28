@@ -67,6 +67,13 @@ chitthi:
     # at 05:30 IST (UTC midnight).
     daily-words: 7000
     zone: Asia/Kolkata
+  ratelimit:
+    # FR15's per-IP request limit. A whole minute's worth of permits at
+    # once rather than a trickle - see PerIpRateLimitFilter for why a
+    # browser needs the burst. 0 disables the filter entirely, which is
+    # what Day 12's load test uses since it drives every request from a
+    # single address.
+    per-ip-requests-per-minute: 60
   ocr:
     worker:
       enabled: true
