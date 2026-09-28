@@ -24,14 +24,15 @@ class DashboardJsonTest {
             "chitthi_sarvam_cost_inr_total",
             "chitthi_sarvam_units_total",
             "http_server_requests_seconds",
-            "chitthi_outbox_unpublished");
+            "chitthi_outbox_unpublished",
+            "chitthi_ratelimit_requests_total");
 
     @Test
-    void theDashboardParsesAndHasSixPanels() throws Exception {
+    void theDashboardParsesAndHasSevenPanels() throws Exception {
         JsonNode dashboard = readDashboard();
 
         assertThat(dashboard.get("title").asText()).isEqualTo("Chitthi");
-        assertThat(dashboard.get("panels")).hasSize(6);
+        assertThat(dashboard.get("panels")).hasSize(7);
     }
 
     @Test
