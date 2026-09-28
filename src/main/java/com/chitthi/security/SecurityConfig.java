@@ -1,5 +1,7 @@
 package com.chitthi.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -15,6 +17,7 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 
@@ -35,6 +38,12 @@ import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
  * credentials would otherwise fail to start on a missing bean.
  * {@link DevUserAuthenticationFilter} is the other way in, gated on {@code
  * chitthi.security.dev-user} and never registered without it.
+ *
+ * <p>{@link PerIpRateLimitFilter} (FR15) is registered the same way - built
+ * with {@code new} inside {@link #filterChain}, never a {@code @Component} -
+ * a bean {@code Filter} is auto-registered into the main servlet chain by
+ * Boot as well as here, which would count every request twice against its
+ * own limit.
  */
 @Configuration
 @EnableWebSecurity
@@ -87,7 +96,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, Environment environment) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, Environment environment, RatelimitProperties ratelimitProperties,
+                                            MeterRegistry meterRegistry, ObjectMapper objectMapper) throws Exception {
         CookieCsrfTokenRepository csrfTokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         // Spring Security 6's CSRF-BREACH-protection default only writes the
         // cookie lazily, as a request attribute, unless the request
@@ -132,6 +142,16 @@ public class SecurityConfig {
 
         if (!devUser.isBlank()) {
             http.addFilterBefore(new DevUserAuthenticationFilter(devUser), UsernamePasswordAuthenticationFilter.class);
+        }
+
+        if (ratelimitProperties.enabled()) {
+            // Anchored before session/authentication processing, so a
+            // rejected request never costs that work - the point of a rate
+            // limiter. A configured 0 (Day 12's load test) means the filter
+            // is not in the chain at all, not that it runs and waves
+            // everything through.
+            http.addFilterBefore(new PerIpRateLimitFilter(ratelimitProperties, meterRegistry, objectMapper),
+                    SecurityContextHolderFilter.class);
         }
 
         return http.build();

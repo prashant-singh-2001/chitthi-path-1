@@ -240,10 +240,11 @@ section for the full page state machine.
     killing the connection after the response was already committed.
     `DevUserAuthenticationFilter` now re-authenticates on async
     dispatch too.
-- **Day 11 (part 3 of 3):** the daily word cap (FR15) — a page whose
-  words don't fit its owner's remaining 7,000-word daily budget stops
-  before translation and TTS, the actual cost drivers. (Per-IP rate
-  limits are their own follow-up PR.)
+- **Day 11 (part 3 of 3):** the daily word cap and per-IP rate limits
+  (FR15) — a page whose words don't fit its owner's remaining
+  7,000-word daily budget stops before translation and TTS, the
+  actual cost drivers, and a per-IP limit protects `/api/**`,
+  `/oauth2/**` and `/login/**`.
   - `user_daily_usage(owner_id, day, words)` is claimed with a single
     `INSERT ... ON CONFLICT DO UPDATE` whose `WHERE` clause on both
     branches rejects a claim that would push the total past the cap —
@@ -273,6 +274,29 @@ section for the full page state machine.
     `WordBudgetConcurrencyIntegrationTest` races 50 concurrent claims
     against a small cap and asserts the total ever granted never
     exceeds it.
+  - `PerIpRateLimitFilter` (60 requests/min per address by default,
+    `chitthi.ratelimit.per-ip-requests-per-minute: 0` disables it for
+    Day 12's single-machine load test) limits `/api/**`, `/oauth2/**`
+    and `/login/**` — excluding the SSE progress stream (an
+    `EventSource` reconnects on its own) and every `/actuator/**` path
+    (a deployed health check or Prometheus scrape from one address
+    shouldn't trip it). Deliberately not built on the
+    `RateLimiterRegistry` bean `resilience4j-spring-boot3` already
+    autoconfigures: keyed by client IP, its metrics autoconfiguration
+    would export one Prometheus series per address ever seen. Limiters
+    are hand-built instead, the same way `SarvamResilience` already
+    does for Sarvam calls, held in a small bounded, evicting map — with
+    two shapes deliberately different from `SarvamResilience`'s: a
+    whole minute's permits at once (the SPA fires several requests
+    together on page load) rather than one trickling permit, and a
+    zero timeout (a filter must reject immediately) rather than a
+    multi-second wait.
+  - `PerIpRateLimitFilterTest` is the one unit test in this project
+    that runs locally rather than only in CI — it needs no Mockito
+    (Mockito can't mock concrete classes on this machine's JDK 25),
+    just `MockHttpServletRequest`/`MockHttpServletResponse`, which is
+    also the only way to assert per-IP isolation at all:
+    `TestRestTemplate` always arrives from `127.0.0.1`.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
@@ -366,6 +390,17 @@ one to use the app at all:
 (default `Asia/Kolkata`) control the per-user daily budget. Lower
 `daily-words` locally (e.g. `50`) to see a page hit `CAPPED` without
 uploading a genuinely huge document.
+
+### Per-IP rate limits (FR15)
+
+`chitthi.ratelimit.per-ip-requests-per-minute` (default `60`) caps
+requests to `/api/**`, `/oauth2/**` and `/login/**` per client
+address, reading only `request.getRemoteAddr()` — never a
+client-supplied header. Behind a reverse proxy, set Spring Boot's
+standard `server.forward-headers-strategy` so that address is the
+real client's, not the proxy's. Set to `0` to disable the filter
+entirely, which is what Day 12's load test (20 parallel documents
+from one machine) needs.
 
 ## Contributing
 
