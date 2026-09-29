@@ -345,8 +345,11 @@ Flyway migrates the schema on application startup. Tests use WireMock
 for Sarvam contract tests and Testcontainers for Postgres/RabbitMQ/LocalStack
 — no real Sarvam API calls happen in the standard test suite. A tagged
 smoke test that does make one real, paid Digitise call is excluded by
-default; run it deliberately with `mvn test -Dgroups=smoke` once
-`SARVAM_API_KEY` is set.
+default; run it deliberately with `mvn test -Psmoke` once
+`SARVAM_API_KEY` is set (a bare `-Dgroups=smoke` silently selects zero
+tests — surefire's `groups`/`excludedGroups` have their own built-in
+property bindings, and the exclusion always wins when a tag appears in
+both; `-Psmoke` is the profile that actually clears the exclusion).
 
 ## Run the frontend
 
