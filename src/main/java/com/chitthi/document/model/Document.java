@@ -48,6 +48,9 @@ public class Document {
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
+    @Column(name = "completed_at")
+    private OffsetDateTime completedAt;
+
     protected Document() {
     }
 
@@ -79,8 +82,16 @@ public class Document {
         return status;
     }
 
+    /**
+     * Stamps or clears {@code completedAt} alongside the status itself, so
+     * every call site - including the three that send a finished document
+     * back to PROCESSING (a retry, an edit) - gets it right without having
+     * to remember to. A document sent back to PROCESSING has its stamp
+     * cleared so the next completion records a fresh, correct duration.
+     */
     public void setStatus(DocumentStatus status) {
         this.status = status;
+        this.completedAt = status.isTerminal() ? OffsetDateTime.now() : null;
     }
 
     public List<String> getTags() {
@@ -93,5 +104,9 @@ public class Document {
 
     public OffsetDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public OffsetDateTime getCompletedAt() {
+        return completedAt;
     }
 }

@@ -7,6 +7,7 @@ import com.chitthi.document.model.PageStatus;
 import com.chitthi.document.repository.DocumentRepository;
 import com.chitthi.document.repository.PageRepository;
 import com.chitthi.progress.DocumentProgressEvent;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -25,7 +26,7 @@ class AssembleStateServiceTest {
     private final DocumentRepository documentRepository = mock(DocumentRepository.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final AssembleStateService stateService =
-            new AssembleStateService(pageRepository, documentRepository, eventPublisher);
+            new AssembleStateService(pageRepository, documentRepository, eventPublisher, new SimpleMeterRegistry());
 
     @Test
     void promotesAudioDonePagesToIndexedAndCompletesTheDocumentWhenNoneFailed() {
@@ -43,6 +44,7 @@ class AssembleStateServiceTest {
         assertThat(audioDone.getStatus()).isEqualTo(PageStatus.INDEXED);
         assertThat(alreadyIndexed.getStatus()).isEqualTo(PageStatus.INDEXED);
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.COMPLETE);
+        assertThat(document.getCompletedAt()).isNotNull();
         verify(eventPublisher).publishEvent(new DocumentProgressEvent(documentId));
     }
 

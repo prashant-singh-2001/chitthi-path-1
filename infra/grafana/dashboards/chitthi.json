@@ -94,6 +94,18 @@
           "legendFormat": "{{outcome}}"
         }
       ]
+    },
+    {
+      "id": 8,
+      "title": "Document end-to-end duration p95 (by final status)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "chitthi_document_duration_seconds{quantile=\"0.95\"}",
+          "legendFormat": "{{status}} p95"
+        }
+      ]
     }
   ]
 }

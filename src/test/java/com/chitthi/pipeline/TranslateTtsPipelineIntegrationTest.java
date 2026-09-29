@@ -162,6 +162,11 @@ class TranslateTtsPipelineIntegrationTest {
             assertThat(document.getStatus()).isEqualTo(DocumentStatus.COMPLETE);
         });
 
+        // Day 12: sanity that the end-to-end timer is actually wired before
+        // the load test depends on it.
+        Document completedDocument = documentRepository.findById(documentId).orElseThrow();
+        assertThat(completedDocument.getCompletedAt()).isNotNull();
+
         List<Page> pages = pageRepository.findByDocumentIdOrderByPageNo(documentId);
         assertThat(pages).hasSize(12);
         assertThat(pages).allSatisfy(page -> {

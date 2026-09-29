@@ -184,6 +184,7 @@ management:
         # app - only the ones the dashboard actually reads.
         chitthi.sarvam.latency: 0.5, 0.95
         http.server.requests: 0.5, 0.95
+        chitthi.document.duration: 0.5, 0.95
 
 logging:
   pattern:
