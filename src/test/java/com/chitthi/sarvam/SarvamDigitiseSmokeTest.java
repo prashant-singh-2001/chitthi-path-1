@@ -34,10 +34,13 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * <p>Excluded from the default build (see the surefire {@code excludedGroups}
  * in {@code pom.xml}) and gated on {@code SARVAM_API_KEY} being set, so
  * {@code mvn verify} and CI never spend credits. Run it deliberately with
- * {@code mvn test -Dgroups=smoke -DSARVAM_API_KEY=...} (or the env var set),
- * read what it prints, and if the real field name isn't already in
- * {@code chitthi.ocr.result.text-fields}, add it there - no code change
- * needed.
+ * {@code mvn test -Psmoke} once {@code SARVAM_API_KEY} is set - not a bare
+ * {@code -Dgroups=smoke}, which silently selects zero tests (surefire's
+ * {@code excludedGroups} here is bound to a property this profile overrides;
+ * a literal {@code smoke} in both {@code groups} and {@code excludedGroups}
+ * excludes it either way). Read what it prints, and if the real field name
+ * isn't already in {@code chitthi.ocr.result.text-fields}, add it there - no
+ * code change needed.
  */
 @Tag("smoke")
 @EnabledIfEnvironmentVariable(named = "SARVAM_API_KEY", matches = ".+")

@@ -22,6 +22,15 @@
         <resilience4j.version>2.2.0</resilience4j.version>
         <minio.version>8.5.12</minio.version>
         <pdfbox.version>3.0.3</pdfbox.version>
+        <!-- Bound into the surefire config below via ${...}, not hardcoded
+             there, specifically so -Dgroups/-DexcludedGroups on the command
+             line actually take effect - a literal value in the plugin
+             config always wins over a same-named -D, which silently made
+             the long-documented `mvn test -Dgroups=smoke` select zero tests
+             before this. The -Psmoke/-Pload profiles below just override
+             these two properties. -->
+        <test.groups/>
+        <test.excludedGroups>smoke,load</test.excludedGroups>
     </properties>
 
     <dependencies>
@@ -191,11 +200,44 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <!-- Smoke tests make real, paid calls against the Sarvam
-                         API and must never run in mvn verify or CI. Run them
-                         deliberately with -Dgroups=smoke. -->
-                    <excludedGroups>smoke</excludedGroups>
+                         API; load tests deliberately drive 20 documents in
+                         parallel (see the Day 7 CI incident notes on several
+                         integration tests) and are meaningless without real
+                         concurrency. Neither runs in mvn verify or CI's
+                         default build - both are opt in, via -Psmoke or
+                         -Pload (see the properties above and the profiles
+                         below). Bound through ${test.groups}/
+                         ${test.excludedGroups} rather than hardcoded here:
+                         surefire's groups/excludedGroups parameters have
+                         their OWN built-in property bindings, so writing a
+                         literal value directly in this element - as this
+                         used to - always wins over a same-named -D on the
+                         command line, which silently made the long-
+                         documented `mvn test -Dgroups=smoke` select zero
+                         tests. Going through project properties instead
+                         means both -Psmoke/-Pload and a direct
+                         -Dtest.groups=... work. -->
+                    <groups>${test.groups}</groups>
+                    <excludedGroups>${test.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>smoke</id>
+            <properties>
+                <test.groups>smoke</test.groups>
+                <test.excludedGroups>load</test.excludedGroups>
+            </properties>
+        </profile>
+        <profile>
+            <id>load</id>
+            <properties>
+                <test.groups>load</test.groups>
+                <test.excludedGroups>smoke</test.excludedGroups>
+            </properties>
+        </profile>
+    </profiles>
 </project>
