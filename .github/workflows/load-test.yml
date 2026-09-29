@@ -1,0 +1,29 @@
+name: Load test
+
+# Day 12: 20 documents in parallel against WireMock, under the real Vision
+# rate limit and production poll backoff. Manual only - workflow_dispatch,
+# never on push/pull_request - since it deliberately drives real concurrency
+# (see the Day 7 CI incident notes on several integration tests) and is
+# meant to be read from the job log, not gate every PR.
+on:
+  workflow_dispatch:
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    # An unbounded load job on a shared runner is how a stuck build burns
+    # hours; ci.yml's normal build sets no timeout at all, but this one
+    # deliberately drives concurrency and needs the guard rail.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run the load test
+        run: mvn -B test -Pload
