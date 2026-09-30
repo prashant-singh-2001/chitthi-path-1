@@ -9,6 +9,22 @@ spring:
       max-file-size: 20MB
       max-request-size: 64MB
 
+  task:
+    scheduling:
+      pool:
+        # Boot's default is ONE thread, shared by every @Scheduled method:
+        # OutboxRelay.relay (every 200ms - it publishes every stage
+        # transition, since translate, TTS and assemble are all enqueued
+        # through the outbox), OutboxRelay.purgePublished, OcrStatusPoller
+        # .sweep (every 1s; up to three sequential Sarvam HTTP calls per due
+        # batch, for up to claim-batch-size batches, under a 60s read
+        # timeout) and ProgressHeartbeat. One slow or hung Sarvam status call
+        # would freeze the outbox relay - and so every other document's next
+        # stage - for as long as it takes. Chosen on that reasoning rather
+        # than measured: the Day 12 load test can't show it, since WireMock
+        # answers instantly and batches reach the poller ~6s apart.
+        size: 4
+
   datasource:
     url: jdbc:postgresql://localhost:55432/chitthi
     username: chitthi
