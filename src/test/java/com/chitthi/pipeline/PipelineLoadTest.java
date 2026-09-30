@@ -101,12 +101,15 @@ class PipelineLoadTest {
     // rate-limiter wait (SarvamResilience's 6s-per-permit refresh), plus
     // translate/TTS/assemble and the shared runner's own variance.
     private static final Duration COMPLETION_TIMEOUT = Duration.ofMinutes(8);
-    // Deliberately looser than a performance SLO would be, and distinct from
-    // (shorter than) COMPLETION_TIMEOUT above: this is a stall/regression
-    // detector - it catches a stuck pipeline, not a missed target - since
-    // end-to-end time here is dominated by the rate limiter and the shared
-    // runner's speed varies run to run.
-    private static final long P95_SANITY_CEILING_MS = Duration.ofMinutes(6).toMillis();
+    // A regression detector, not a performance SLO, and distinct from
+    // (shorter than) COMPLETION_TIMEOUT above. Set from measurements, so it
+    // sits between the two regimes this test has actually seen: healthy runs
+    // finish with p95 of ~108-114s (the limiter's own floor - the runner's
+    // speed barely matters), while the circuit-breaker bug it was written to
+    // catch gave p95 of ~316s. The original 6-minute ceiling would have
+    // passed that broken baseline, which is exactly what a stall detector
+    // must not do; 4 minutes is ~2x healthy and well under the bug.
+    private static final long P95_SANITY_CEILING_MS = Duration.ofMinutes(4).toMillis();
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");

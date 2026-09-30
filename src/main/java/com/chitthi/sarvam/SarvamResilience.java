@@ -65,17 +65,21 @@ public class SarvamResilience {
     }
 
     private Chain buildChain(String name, int requestsPerMinute) {
-        Duration refreshPeriod = Duration.ofMillis(Math.max(1, 60_000L / requestsPerMinute));
         RateLimiterConfig rateLimiterConfig = RateLimiterConfig.custom()
                 // A continuously-replenishing bucket (one permit trickling in
                 // every 60s/rpm) rather than "rpm permits, reset every
                 // minute" - closer to how Sarvam's own limits behave, and it
                 // avoids every worker bursting at the top of each minute.
                 .limitForPeriod(1)
-                .limitRefreshPeriod(refreshPeriod)
-                // ABLATION (Day 12): the original flat 3s, with the circuit
-                // breaker fix kept, to measure whether waiting out a full
-                // refresh period earns its keep once the breaker is fixed.
+                .limitRefreshPeriod(Duration.ofMillis(Math.max(1, 60_000L / requestsPerMinute)))
+                // A caller that can't get a permit in time is not rejected
+                // at once - it waits this full timeout first, then fails.
+                // Waiting out a whole refresh period instead (6s for Vision)
+                // was measured in Day 12's load test with the circuit
+                // breaker fixed: fewer rejections (22 against 79 for 20
+                // documents) but the same drain time (119.0s against 120.2s,
+                // both at the ~120s floor the limiter allows), while holding
+                // a consumer twice as long per futile wait. Not worth it.
                 .timeoutDuration(Duration.ofSeconds(3))
                 .build();
 
@@ -116,7 +120,7 @@ public class SarvamResilience {
                 // successes (Sarvam did answer), it must count as neither.
                 // Recorded as a failure, a few of these opened the breaker
                 // for 30s and blocked every submit with permits going
-                // unused: Day 12's load test saw 93-95% of all "paused"
+                // unused: Day 12's load test saw 93-96% of all "paused"
                 // submits turn out to be breaker rejections, not limiter ones.
                 .ignoreExceptions(RequestNotPermitted.class)
                 .build();
