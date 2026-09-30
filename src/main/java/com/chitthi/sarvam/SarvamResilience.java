@@ -64,14 +64,27 @@ public class SarvamResilience {
     }
 
     private Chain buildChain(String name, int requestsPerMinute) {
+        Duration refreshPeriod = Duration.ofMillis(Math.max(1, 60_000L / requestsPerMinute));
         RateLimiterConfig rateLimiterConfig = RateLimiterConfig.custom()
                 // A continuously-replenishing bucket (one permit trickling in
                 // every 60s/rpm) rather than "rpm permits, reset every
                 // minute" - closer to how Sarvam's own limits behave, and it
                 // avoids every worker bursting at the top of each minute.
                 .limitForPeriod(1)
-                .limitRefreshPeriod(Duration.ofMillis(Math.max(1, 60_000L / requestsPerMinute)))
-                .timeoutDuration(Duration.ofSeconds(3))
+                .limitRefreshPeriod(refreshPeriod)
+                // A caller only waits if the next permit arrives within this
+                // long - otherwise it is rejected immediately - and a
+                // reservation is exclusive, and permits can't be banked. So a
+                // timeout shorter than the refresh period leaves part of
+                // every period in which nobody is allowed to wait for the
+                // upcoming permit, and that permit is simply lost. Vision's
+                // 6s refresh against the old flat 3s delivered only about 40%
+                // of its capacity under load (Day 12's load test: 20
+                // documents took ~317s against a ~121s floor). Waiting out one full period
+                // means any caller arriving while no one holds the next
+                // permit can take it; the 3s floor keeps the much faster
+                // translate/TTS limiters (1s refresh) as they were.
+                .timeoutDuration(refreshPeriod.compareTo(Duration.ofSeconds(3)) > 0 ? refreshPeriod : Duration.ofSeconds(3))
                 .build();
 
         CircuitBreakerConfig circuitBreakerConfig = CircuitBreakerConfig.custom()
