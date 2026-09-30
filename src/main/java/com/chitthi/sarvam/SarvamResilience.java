@@ -73,16 +73,10 @@ public class SarvamResilience {
                 // avoids every worker bursting at the top of each minute.
                 .limitForPeriod(1)
                 .limitRefreshPeriod(refreshPeriod)
-                // A caller reserves the next permit only if it arrives within
-                // this long; otherwise it still WAITS the full timeout and is
-                // then rejected (measured: a rejected call blocks for exactly
-                // the timeout). A reservation is exclusive and permits can't
-                // be banked, so a timeout shorter than the refresh period
-                // leaves part of every period in which no arrival can
-                // reserve the upcoming permit. Waiting out one full period
-                // closes that gap; the 3s floor keeps the much faster
-                // translate/TTS limiters (1s refresh) as they were.
-                .timeoutDuration(refreshPeriod.compareTo(Duration.ofSeconds(3)) > 0 ? refreshPeriod : Duration.ofSeconds(3))
+                // ABLATION (Day 12): the original flat 3s, with the circuit
+                // breaker fix kept, to measure whether waiting out a full
+                // refresh period earns its keep once the breaker is fixed.
+                .timeoutDuration(Duration.ofSeconds(3))
                 .build();
 
         CircuitBreakerConfig circuitBreakerConfig = circuitBreakerConfig();
