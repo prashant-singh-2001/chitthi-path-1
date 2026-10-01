@@ -30,7 +30,7 @@
              before this. The -Psmoke/-Pload profiles below just override
              these two properties. -->
         <test.groups/>
-        <test.excludedGroups>smoke,load</test.excludedGroups>
+        <test.excludedGroups>smoke,load,accuracy</test.excludedGroups>
     </properties>
 
     <dependencies>
@@ -229,14 +229,21 @@
             <id>smoke</id>
             <properties>
                 <test.groups>smoke</test.groups>
-                <test.excludedGroups>load</test.excludedGroups>
+                <test.excludedGroups>load,accuracy</test.excludedGroups>
             </properties>
         </profile>
         <profile>
             <id>load</id>
             <properties>
                 <test.groups>load</test.groups>
-                <test.excludedGroups>smoke</test.excludedGroups>
+                <test.excludedGroups>smoke,accuracy</test.excludedGroups>
+            </properties>
+        </profile>
+        <profile>
+            <id>accuracy</id>
+            <properties>
+                <test.groups>accuracy</test.groups>
+                <test.excludedGroups>smoke,load</test.excludedGroups>
             </properties>
         </profile>
     </profiles>
