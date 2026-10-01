@@ -437,6 +437,32 @@ tests — surefire's `groups`/`excludedGroups` have their own built-in
 property bindings, and the exclusion always wins when a tag appears in
 both; `-Psmoke` is the profile that actually clears the exclusion).
 
+### Handwriting accuracy evaluation
+
+An opt-in harness scores Digitise's output on real handwriting against your
+own transcriptions. It makes real, paid calls (one Digitise job per image,
+about ₹0.50 each; it prints the estimate before submitting). Lay samples out
+as one directory per language code, each image with its transcription beside
+it, in the original script:
+
+```
+samples/hi/letter1.jpg   samples/hi/letter1.txt
+samples/ta/note3.png     samples/ta/note3.txt
+```
+
+Keep the scans outside the repo, and use public-domain material only. Then:
+
+```
+SARVAM_API_KEY=... CHITTHI_ACCURACY_DIR=/path/to/samples mvn test -Paccuracy
+```
+
+It writes `target/accuracy-report.md` (and the raw output to
+`target/accuracy-output/`): character and word error rate per image, a
+micro-averaged rate per language, the Digitise time, and which JSON field the
+text came from. Rates are Unicode code-point edit distance over the reference
+length after NFC normalisation, so in Indic scripts a missed vowel sign is one
+error — not a grapheme-level figure. No Docker is needed.
+
 ## Run the frontend
 
 ```
