@@ -101,12 +101,15 @@ class PipelineLoadTest {
     // rate-limiter wait (SarvamResilience's 6s-per-permit refresh), plus
     // translate/TTS/assemble and the shared runner's own variance.
     private static final Duration COMPLETION_TIMEOUT = Duration.ofMinutes(8);
-    // Deliberately looser than a performance SLO would be, and distinct from
-    // (shorter than) COMPLETION_TIMEOUT above: this is a stall/regression
-    // detector - it catches a stuck pipeline, not a missed target - since
-    // end-to-end time here is dominated by the rate limiter and the shared
-    // runner's speed varies run to run.
-    private static final long P95_SANITY_CEILING_MS = Duration.ofMinutes(6).toMillis();
+    // A regression detector, not a performance SLO, and distinct from
+    // (shorter than) COMPLETION_TIMEOUT above. Set from measurements, so it
+    // sits between the two regimes this test has actually seen: healthy runs
+    // finish with p95 of ~108-114s (the limiter's own floor - the runner's
+    // speed barely matters), while the circuit-breaker bug it was written to
+    // catch gave p95 of ~316s. The original 6-minute ceiling would have
+    // passed that broken baseline, which is exactly what a stall detector
+    // must not do; 4 minutes is ~2x healthy and well under the bug.
+    private static final long P95_SANITY_CEILING_MS = Duration.ofMinutes(4).toMillis();
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
@@ -189,11 +192,23 @@ class PipelineLoadTest {
         // under real concurrency rather than injected failures.
         wireMockServer.verify(DOCUMENT_COUNT, postRequestedFor(urlPathEqualTo("/doc-ai/v1/job/digitise")));
 
-        List<Long> durationsMs = new ArrayList<>(DOCUMENT_COUNT);
+        List<Document> documentsInArrivalOrder = new ArrayList<>(DOCUMENT_COUNT);
         for (UUID documentId : documentIds) {
-            Document document = documentRepository.findById(documentId).orElseThrow();
-            durationsMs.add(Duration.between(document.getCreatedAt(), document.getCompletedAt()).toMillis());
+            documentsInArrivalOrder.add(documentRepository.findById(documentId).orElseThrow());
         }
+        documentsInArrivalOrder.sort(java.util.Comparator.comparing(Document::getCreatedAt));
+
+        // Durations in the order the documents were *created*, printed below
+        // next to the sorted list: the requirements' risk table promises
+        // "FIFO fairness across users", and a rate-limited OCR message goes
+        // back to a retry tier while a later one may take the next permit -
+        // arrival order against completion order is the cheapest way to see
+        // whether that promise holds. Observation only, no assertion.
+        List<Long> durationsInArrivalOrderMs = new ArrayList<>(DOCUMENT_COUNT);
+        for (Document document : documentsInArrivalOrder) {
+            durationsInArrivalOrderMs.add(Duration.between(document.getCreatedAt(), document.getCompletedAt()).toMillis());
+        }
+        List<Long> durationsMs = new ArrayList<>(durationsInArrivalOrderMs);
         durationsMs.sort(Long::compareTo);
 
         // n=20 makes this the second-slowest document, not a robust
@@ -205,6 +220,8 @@ class PipelineLoadTest {
         System.out.printf(
                 "Day 12 load test - %d documents, end-to-end duration (ms): p50=%d p95=%d max=%d all=%s%n",
                 DOCUMENT_COUNT, p50, p95, max, durationsMs);
+        System.out.printf("Day 12 load test - durations (ms) in document creation order: %s%n",
+                durationsInArrivalOrderMs);
 
         assertThat(p95).as("p95 end-to-end duration (ms) over %s: a stall/regression detector, not an SLO", durationsMs)
                 .isLessThan(P95_SANITY_CEILING_MS);

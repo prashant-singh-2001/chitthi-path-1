@@ -297,6 +297,92 @@ section for the full page state machine.
     just `MockHttpServletRequest`/`MockHttpServletResponse`, which is
     also the only way to assert per-IP isolation at all:
     `TestRestTemplate` always arrives from `127.0.0.1`.
+- **Day 12:** a load test with 20 documents in parallel against the real
+  10 requests/min Vision limit — **p50 59.9s, p95 114.2s, max 120.2s**
+  end to end (down from 149.0s / 315.5s / 317.5s before the fix below).
+  See [Load test](#load-test).
+
+## Load test
+
+`PipelineLoadTest` uploads 20 one-page documents at once against
+WireMock (never real Sarvam) and waits for all of them to reach
+`COMPLETE`, reading each document's end-to-end duration from
+`document.completed_at - created_at` — stamped by `Document.setStatus`
+and also exported as the `chitthi.document.duration` timer, with a
+Grafana panel. It keeps the production OCR poll backoff and the real
+10/min Vision limit, unlike every other pipeline integration test,
+which compresses both to run fast: here the timing is what is measured.
+One-page documents make the same 20 Vision submits as twenty ten-page
+ones (chunking is per 10 pages) at a tenth of the downstream work,
+which matters on a shared CI runner (see the Day 7 incident above).
+
+It is excluded from the normal build. Run it with `mvn test -Pload`
+where Docker is available, or trigger the **Load test** workflow
+(`gh workflow run load-test.yml`), then read the `Day 12 load test`
+lines from the log.
+
+**The floor.** 20 submits against a 10/min limiter (one permit per 6s)
+cannot finish in under ~114s, so the last document cannot complete
+before ~120s. That is the best any tuning can do; p95 here is how long
+the 19th document waits in a 20-document burst behind that limit, not
+processing time.
+
+| Run | Change | p50 | p95 | max | "Paused" submits (limiter / breaker) |
+| --- | --- | --- | --- | --- | --- |
+| [1](https://github.com/prashant-singh-2001/chitthi-path-1/actions/runs/36740972802) | baseline | 149.0s | 315.5s | 317.5s | 941 (45 / 896) |
+| [2](https://github.com/prashant-singh-2001/chitthi-path-1/actions/runs/36742113080) | + scheduler pool of 4 | 149.4s | 316.1s | 316.9s | 1047 (40 / 1007) |
+| [3](https://github.com/prashant-singh-2001/chitthi-path-1/actions/runs/36743145377) | + 6s limiter timeout | 77.0s | 191.8s | 196.6s | 275 (19 / 256) |
+| [4](https://github.com/prashant-singh-2001/chitthi-path-1/actions/runs/36744813862) | + circuit breaker fix | 54.8s | 108.1s | 119.0s | 22 (22 / 0) |
+| [5](https://github.com/prashant-singh-2001/chitthi-path-1/actions/runs/36745374413) | breaker fix, timeout back to 3s (**final**) | 59.9s | 114.2s | 120.2s | 79 (79 / 0) |
+
+**What was wrong.** In the baseline, documents completed in pairs about
+33s apart — roughly a third of what the limit allows. Reading the log
+showed why: 95% of the "paused" submits were not the rate limiter
+turning callers away but the **circuit breaker being open**. The
+breaker wraps the limiter, and it recorded the limiter's own rejection
+as a failure of the endpoint even though Sarvam was never called, so a
+few dozen rejections opened it for 30s at a time, blocking every submit
+while permits went unused. `SarvamResilience` now tells the breaker to
+ignore limiter rejections, with a unit test that fails on the old
+config. After it, completions are spaced ~6s apart, exactly the
+limiter's cadence, and the last document finishes at the floor.
+
+**What was tried and not kept.** The scheduler pool (`spring.task.
+scheduling.pool.size: 4`) made no measurable difference, as expected:
+batches reach the poller ~6s apart and WireMock answers instantly, so
+the single default thread is never busy for long. It stays on the code
+reasoning rather than the numbers — one slow or hung Sarvam status call
+would otherwise freeze the outbox relay, and with it every other
+document's next stage, for up to the 60s read timeout. A 6s limiter
+timeout (waiting out a full refresh period) looked like the fix after
+run 3 but was justified on a wrong model of how the limiter behaves
+(a caller that can't get a permit in time waits the full timeout and
+*then* fails; it is not rejected at once). With the breaker fixed it
+cuts futile waits from 79 to 22 but drains the burst in the same time
+(119.0s against 120.2s), so the original 3s stayed. Run 3's improvement
+is most plausibly the same effect seen from the other side: fewer limiter
+rejections meant fewer failures recorded against the breaker, so it
+opened less often (breaker rejections fell from 1007 to 256) — a partial
+fix of the real cause, not a separate one.
+
+**Not addressed: ordering.** Documents do not complete in the order they
+were created — the first-uploaded document finished 14th of 20 in the
+final run, and the order is scrambled in every run. The requirements'
+risk table promises "FIFO fairness across users"; a rate-limited OCR
+message goes back to a 5s retry tier while a later one can take the
+next permit, so nothing preserves arrival order. All 20 uploads arrive
+within about a second, so this can't say how bad it is at real
+arrival rates, but the promise isn't delivered by the current design.
+
+**Caveats.**
+- WireMock stands in for Sarvam, so this measures our queueing and the
+  limiter, not Sarvam's own latency (real OCR jobs will take longer).
+- n = 20, so p95 is the second-slowest document, not a robust
+  percentile. Run-to-run spread is small (runs 1 and 2 agree to within
+  1%) because the limiter, not the runner, dominates.
+- The test's p95 ceiling is 4 minutes: about twice a healthy run and well
+  under the ~316s the breaker bug produced. It is a regression
+  detector, not a performance target.
 
 See the [delivery plan](Chitthi%20—%20Requirements%20Document.md#two-week-delivery-plan)
 for what's next.
@@ -350,6 +436,32 @@ default; run it deliberately with `mvn test -Psmoke` once
 tests — surefire's `groups`/`excludedGroups` have their own built-in
 property bindings, and the exclusion always wins when a tag appears in
 both; `-Psmoke` is the profile that actually clears the exclusion).
+
+### Handwriting accuracy evaluation
+
+An opt-in harness scores Digitise's output on real handwriting against your
+own transcriptions. It makes real, paid calls (one Digitise job per image,
+about ₹0.50 each; it prints the estimate before submitting). Lay samples out
+as one directory per language code, each image with its transcription beside
+it, in the original script:
+
+```
+samples/hi/letter1.jpg   samples/hi/letter1.txt
+samples/ta/note3.png     samples/ta/note3.txt
+```
+
+Keep the scans outside the repo, and use public-domain material only. Then:
+
+```
+SARVAM_API_KEY=... CHITTHI_ACCURACY_DIR=/path/to/samples mvn test -Paccuracy
+```
+
+It writes `target/accuracy-report.md` (and the raw output to
+`target/accuracy-output/`): character and word error rate per image, a
+micro-averaged rate per language, the Digitise time, and which JSON field the
+text came from. Rates are Unicode code-point edit distance over the reference
+length after NFC normalisation, so in Indic scripts a missed vowel sign is one
+error — not a grapheme-level figure. No Docker is needed.
 
 ## Run the frontend
 
